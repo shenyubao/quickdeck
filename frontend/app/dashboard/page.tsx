@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Layout,
@@ -48,8 +48,43 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [expandedKeys, setExpandedKeysState] = useState<React.Key[]>([]);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
+
+  // 获取所有节点的 keys（用于展开全部）
+  const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
+    let keys: React.Key[] = [];
+    nodes.forEach((node) => {
+      keys.push(node.key);
+      if (node.children) {
+        keys = keys.concat(getAllKeys(node.children));
+      }
+    });
+    return keys;
+  }, []);
+
+  // 保存展开状态到 localStorage
+  const saveExpandedKeys = useCallback((keys: React.Key[], projectId?: number) => {
+    if (typeof window !== "undefined" && projectId) {
+      localStorage.setItem(`expandedKeys_${projectId}`, JSON.stringify(keys));
+    }
+  }, []);
+
+  // 从 localStorage 加载展开状态
+  const loadExpandedKeys = useCallback((projectId?: number): React.Key[] => {
+    if (typeof window !== "undefined" && projectId) {
+      const saved = localStorage.getItem(`expandedKeys_${projectId}`);
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          return [];
+        }
+      }
+    }
+    return [];
+  }, []);
+
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [form] = Form.useForm();
   const [siderWidth, setSiderWidth] = useState(400);
@@ -63,6 +98,17 @@ export default function Dashboard() {
     if (!projectName) return null;
     return projects.find((p) => p.name === projectName) || null;
   }, [projects]);
+
+  // 设置展开状态（同时保存到 localStorage）
+  const setExpandedKeys = useCallback((keys: React.Key[] | ((prev: React.Key[]) => React.Key[])) => {
+    setExpandedKeysState((prev) => {
+      const newKeys = typeof keys === "function" ? keys(prev) : keys;
+      if (currentProject) {
+        saveExpandedKeys(newKeys, currentProject.id);
+      }
+      return newKeys;
+    });
+  }, [currentProject, saveExpandedKeys]);
 
   // 监听项目变化事件
   useEffect(() => {
@@ -210,22 +256,37 @@ export default function Dashboard() {
 
   // 展开/折叠所有节点
   const handleExpandAll = () => {
-    const getAllKeys = (nodes: TreeNode[]): React.Key[] => {
-      let keys: React.Key[] = [];
-      nodes.forEach((node) => {
-        keys.push(node.key);
-        if (node.children) {
-          keys = keys.concat(getAllKeys(node.children));
-        }
-      });
-      return keys;
-    };
     setExpandedKeys(getAllKeys(treeData));
   };
 
   const handleCollapseAll = () => {
     setExpandedKeys([]);
   };
+
+  // 初始化展开状态：如果有保存的状态则恢复，否则默认展开全部
+  useEffect(() => {
+    if (treeData.length > 0 && currentProject) {
+      const savedKeys = loadExpandedKeys(currentProject.id);
+      const allKeys = getAllKeys(treeData);
+      
+      if (savedKeys.length > 0) {
+        // 验证保存的 keys 是否仍然有效（过滤掉不存在的节点）
+        const validKeys = savedKeys.filter((key: React.Key) => allKeys.includes(key));
+        if (validKeys.length > 0) {
+          // 使用 setExpandedKeys 来同时更新状态和保存到 localStorage
+          setExpandedKeys(validKeys);
+        } else {
+          // 如果保存的 keys 都无效，则默认展开全部
+          const allKeysArray = getAllKeys(treeData);
+          setExpandedKeys(allKeysArray);
+        }
+      } else {
+        // 默认展开全部
+        const allKeysArray = getAllKeys(treeData);
+        setExpandedKeys(allKeysArray);
+      }
+    }
+  }, [treeData, currentProject, getAllKeys, loadExpandedKeys, setExpandedKeys]);
 
   // 处理拖拽调整宽度
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -459,6 +520,7 @@ export default function Dashboard() {
                   onExpand={setExpandedKeys}
                   blockNode
                   showIcon={false}
+                  showLine={{ showLeafIcon: false }}
                 />
               ) : (
                 <Empty

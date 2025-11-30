@@ -2,7 +2,23 @@ import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// 服务端 API URL：在 Docker 容器内使用内部网络名称，否则使用 localhost
+// 服务端代码在容器内运行，可以使用 Docker 内部网络名称
+const getServerApiUrl = () => {
+  // 优先使用服务端专用的环境变量
+  if (process.env.API_URL) {
+    return process.env.API_URL;
+  }
+  // 如果在 Docker 环境中（有 NEXT_PUBLIC_API_URL 且包含 localhost），使用 backend
+  const publicUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (publicUrl && publicUrl.includes("localhost")) {
+    // 服务端在 Docker 容器内，使用内部网络名称
+    return publicUrl.replace("localhost", "backend");
+  }
+  return publicUrl || "http://localhost:8000";
+};
+
+const API_URL = getServerApiUrl();
 const AUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
 
 if (!AUTH_SECRET) {

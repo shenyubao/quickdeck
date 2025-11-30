@@ -90,6 +90,8 @@ class Project(BaseModel):
     __tablename__ = "projects"
     
     project_id = Column(String, unique=True, index=True, nullable=False, comment="项目ID")
+    name = Column(String, nullable=False, comment="项目名称")
+    description = Column(Text, nullable=True, comment="项目描述")
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="项目Owner")
     
     # 关系

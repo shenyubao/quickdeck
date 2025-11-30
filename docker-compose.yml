@@ -31,7 +31,10 @@ services:
       - /app/.next
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      # 客户端必须使用 localhost，因为浏览器无法解析 Docker 内部主机名
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # 服务端在 Docker 容器内，可以使用内部网络名称
+      - API_URL=http://backend:8000
       - NEXTAUTH_URL=http://localhost:3000
       - AUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret
       - NEXTAUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret

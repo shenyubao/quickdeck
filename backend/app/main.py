@@ -1,17 +1,76 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth
+from app.routers import auth, projects
 from app.init_db import init_db
 from alembic.config import Config
 from alembic import command
 import os
 import time
+import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True  # 强制重新配置日志
+)
+logger = logging.getLogger("app.main")
+logger.setLevel(logging.INFO)
+
+
+class LoggingMiddleware(BaseHTTPMiddleware):
+    """请求日志中间件"""
+    
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        
+        # 记录请求信息
+        method = request.method
+        path = request.url.path
+        client_ip = request.client.host if request.client else "unknown"
+        
+        log_message = f"收到请求: {method} {path} - 客户端IP: {client_ip}"
+        logger.info(log_message)
+        print(log_message)  # 同时输出到控制台
+        
+        # 处理请求
+        try:
+            response = await call_next(request)
+            process_time = time.time() - start_time
+            
+            # 记录响应信息
+            status_code = response.status_code
+            log_message = (
+                f"请求完成: {method} {path} - "
+                f"状态码: {status_code} - "
+                f"处理时间: {process_time:.3f}s"
+            )
+            logger.info(log_message)
+            # print(log_message)  # 同时输出到控制台
+            
+            return response
+        except Exception as e:
+            process_time = time.time() - start_time
+            log_message = (
+                f"请求失败: {method} {path} - "
+                f"错误: {str(e)} - "
+                f"处理时间: {process_time:.3f}s"
+            )
+            logger.error(log_message)
+            print(log_message)  # 同时输出到控制台
+            raise
+
 
 app = FastAPI(
     title="QuickDeck API",
     description="QuickDeck Backend API",
     version="0.1.0",
 )
+
+# 添加日志中间件（需要在 CORS 之前添加）
+app.add_middleware(LoggingMiddleware)
 
 # CORS 配置
 app.add_middleware(
@@ -24,6 +83,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(auth.router)
+app.include_router(projects.router)
 
 
 @app.on_event("startup")

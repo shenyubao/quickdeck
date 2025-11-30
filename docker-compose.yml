@@ -1,0 +1,62 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quickdeck-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend-data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/quickdeck
+    depends_on:
+      - db
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - quickdeck-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: quickdeck-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      - backend
+    command: npm run dev
+    networks:
+      - quickdeck-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: quickdeck-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=quickdeck
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - quickdeck-network
+
+volumes:
+  postgres-data:
+  backend-data:
+
+networks:
+  quickdeck-network:
+    driver: bridge
+

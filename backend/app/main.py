@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, projects
+from app.routers import auth, projects, jobs
 from app.init_db import init_db
 from alembic.config import Config
 from alembic import command
@@ -84,6 +84,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(auth.router)
 app.include_router(projects.router)
+app.include_router(jobs.router)
 
 
 @app.on_event("startup")

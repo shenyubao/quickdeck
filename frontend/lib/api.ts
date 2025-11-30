@@ -124,6 +124,119 @@ export interface ProjectUpdate {
   description?: string;
 }
 
+export interface Job {
+  id: number;
+  name: string;
+  path: string;
+  description?: string;
+  owner_id: number;
+  project_id: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface JobCreate {
+  name: string;
+  path: string;
+  description?: string;
+  project_id: number;
+}
+
+export interface JobUpdate {
+  name?: string;
+  path?: string;
+  description?: string;
+}
+
+export const jobApi = {
+  /**
+   * 获取任务列表
+   */
+  async getAll(projectId?: number): Promise<Job[]> {
+    try {
+      const headers = await getAuthHeaders();
+      const apiUrl = getApiUrlValue();
+      const url = projectId 
+        ? `${apiUrl}/api/jobs?project_id=${projectId}`
+        : `${apiUrl}/api/jobs`;
+      
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+        credentials: "include",
+      });
+      
+      return handleResponse<Job[]>(response);
+    } catch (error) {
+      console.error("API 请求错误:", error);
+      if (error instanceof TypeError) {
+        if (error.message === "Failed to fetch") {
+          const apiUrl = getApiUrlValue();
+          const errorMessage = error.cause 
+            ? `网络连接失败: ${error.cause}。请检查：\n1. 后端服务是否运行 (${apiUrl})\n2. 网络连接是否正常\n3. CORS 配置是否正确`
+            : `无法连接到服务器 (${apiUrl})，请检查后端服务是否运行`;
+          throw new Error(errorMessage);
+        }
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * 获取单个任务
+   */
+  async getById(id: number): Promise<Job> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/${id}`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<Job>(response);
+  },
+
+  /**
+   * 创建任务
+   */
+  async create(data: JobCreate): Promise<Job> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Job>(response);
+  },
+
+  /**
+   * 更新任务
+   */
+  async update(id: number, data: JobUpdate): Promise<Job> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Job>(response);
+  },
+
+  /**
+   * 删除任务
+   */
+  async delete(id: number): Promise<void> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    return handleResponse<void>(response);
+  },
+};
+
 export const projectApi = {
   /**
    * 获取所有项目

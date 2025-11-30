@@ -63,3 +63,31 @@ class ProjectResponse(ProjectBase):
     class Config:
         from_attributes = True
 
+
+# Job 相关 schemas
+class JobBase(BaseModel):
+    name: str
+    path: str
+    description: Optional[str] = None
+
+
+class JobCreate(JobBase):
+    project_id: int
+
+
+class JobUpdate(BaseModel):
+    name: Optional[str] = None
+    path: Optional[str] = None
+    description: Optional[str] = None
+
+
+class JobResponse(JobBase):
+    id: int
+    owner_id: int
+    project_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+

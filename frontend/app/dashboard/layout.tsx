@@ -61,8 +61,13 @@ export default function DashboardLayout({
       
       // 如果没有当前选中的项目，且项目列表不为空，自动选择第一个项目
       if (!currentProject && data.length > 0) {
-        setCurrentProject(data[0].name);
-        onProjectChange?.(data[0].name);
+        const firstProject = data[0].name;
+        setCurrentProject(firstProject);
+        onProjectChange?.(firstProject);
+        // 保存到 localStorage
+        if (typeof window !== "undefined") {
+          localStorage.setItem("currentProject", firstProject);
+        }
       }
     } catch (error) {
       // 401 错误会触发自动跳转到登录页，不需要显示错误消息
@@ -145,6 +150,12 @@ export default function DashboardLayout({
   const handleProjectChange = (value: string) => {
     setCurrentProject(value);
     onProjectChange?.(value);
+    // 保存到 localStorage，供子页面使用
+    if (typeof window !== "undefined") {
+      localStorage.setItem("currentProject", value);
+      // 触发自定义事件，通知子页面项目已切换
+      window.dispatchEvent(new CustomEvent("projectChanged"));
+    }
   };
 
   const handleCreateProject = () => {
@@ -244,8 +255,12 @@ export default function DashboardLayout({
                 variant="borderless"
                 loading={loading}
                 placeholder="选择项目"
-                dropdownStyle={{
-                  minWidth: 200,
+                styles={{
+                  popup: {
+                    root: {
+                      minWidth: 200,
+                    },
+                  },
                 }}
                 className="project-selector"
               />

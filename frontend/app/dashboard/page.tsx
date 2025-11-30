@@ -16,6 +16,9 @@ import {
   Popconfirm,
   Modal,
   Form,
+  DatePicker,
+  InputNumber,
+  Upload,
 } from "antd";
 import type { TreeDataNode, MenuProps } from "antd";
 import {
@@ -23,13 +26,11 @@ import {
   EditOutlined,
   CopyOutlined,
   DeleteOutlined,
-  StopOutlined,
-  DownloadOutlined,
   PlusOutlined,
   CaretRightOutlined,
   CaretDownOutlined,
 } from "@ant-design/icons";
-import { jobApi, projectApi, type Job, type Project } from "@/lib/api";
+import { jobApi, projectApi, type Job, type Project, type JobDetail, type OptionResponse } from "@/lib/api";
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -48,8 +49,12 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [jobResultHtml, setJobResultHtml] = useState<string>("");
   const [expandedKeys, setExpandedKeysState] = useState<React.Key[]>([]);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
+  const [runForm] = Form.useForm();
 
   // 获取所有节点的 keys（用于展开全部）
   const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
@@ -245,12 +250,35 @@ export default function Dashboard() {
   }, [jobs]);
 
   // 处理树节点选择
-  const handleSelect = (selectedKeys: React.Key[], info: any) => {
+  const handleSelect = async (selectedKeys: React.Key[], info: any) => {
     const node = info.node as TreeNode;
     if (node.job) {
       setSelectedJob(node.job);
+      // 获取任务详情（包含 workflow）
+      try {
+        setLoadingDetail(true);
+        const detail = await jobApi.getDetailById(node.job.id);
+        setJobDetail(detail);
+        // 初始化表单默认值
+        if (detail.workflow?.options) {
+          const initialValues: Record<string, any> = {};
+          detail.workflow.options.forEach((option) => {
+            if (option.default_value !== null && option.default_value !== undefined) {
+              initialValues[option.name] = option.default_value;
+            }
+          });
+          runForm.setFieldsValue(initialValues);
+        }
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : "获取任务详情失败");
+        setJobDetail(null);
+      } finally {
+        setLoadingDetail(false);
+      }
     } else {
       setSelectedJob(null);
+      setJobDetail(null);
+      runForm.resetFields();
     }
   };
 
@@ -344,7 +372,7 @@ export default function Dashboard() {
           label: "编辑此任务...",
           icon: <EditOutlined />,
           onClick: () => {
-            router.push(`/dashboard/jobs/new?id=${selectedJob.id}`);
+            router.push(`/dashboard/jobs?id=${selectedJob.id}`);
           },
         },
         {
@@ -368,12 +396,6 @@ export default function Dashboard() {
           },
         },
         {
-          key: "duplicate-to-other",
-          label: "复制此任务到其他项目...",
-          icon: <CopyOutlined />,
-          disabled: true, // 暂时禁用
-        },
-        {
           type: "divider",
         },
         {
@@ -390,33 +412,6 @@ export default function Dashboard() {
               onOk: handleDeleteJob,
             });
           },
-        },
-        {
-          key: "disable",
-          label: "禁用执行",
-          icon: <StopOutlined />,
-          disabled: true, // 暂时禁用
-        },
-        {
-          type: "divider",
-        },
-        {
-          key: "download-xml",
-          label: "下载任务定义 (XML)",
-          icon: <DownloadOutlined />,
-          disabled: true, // 暂时禁用
-        },
-        {
-          key: "download-yaml",
-          label: "下载任务定义 (YAML)",
-          icon: <DownloadOutlined />,
-          disabled: true, // 暂时禁用
-        },
-        {
-          key: "download-json",
-          label: "下载任务定义 (JSON)",
-          icon: <DownloadOutlined />,
-          disabled: true, // 暂时禁用
         },
       ]
     : [];
@@ -449,6 +444,49 @@ export default function Dashboard() {
         return;
       }
       message.error(error instanceof Error ? error.message : "操作失败");
+    }
+  };
+
+  // 运行任务
+  const handleRunJob = async () => {
+    if (!selectedJob || !jobDetail) return;
+    
+    try {
+      const values = await runForm.validateFields();
+      // TODO: 调用运行任务的 API
+      message.info("运行任务功能待实现");
+      console.log("运行任务参数:", values);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("验证")) {
+        return;
+      }
+      message.error(error instanceof Error ? error.message : "运行失败");
+    }
+  };
+
+  // 根据参数类型渲染输入组件
+  const renderOptionInput = (option: OptionResponse) => {
+    const { name, input_type, required, multi_valued, option_type } = option;
+    
+    if (option_type === "file") {
+      return (
+        <Upload>
+          <Button>选择文件</Button>
+        </Upload>
+      );
+    }
+
+    switch (input_type) {
+      case "date":
+        return <DatePicker style={{ width: "100%" }} />;
+      case "number":
+        return <InputNumber style={{ width: "100%" }} />;
+      case "plain_text":
+      default:
+        if (multi_valued) {
+          return <Input.TextArea rows={3} placeholder={`请输入${option.label || option.name}`} />;
+        }
+        return <Input placeholder={`请输入${option.label || option.name}`} />;
     }
   };
 
@@ -498,7 +536,7 @@ export default function Dashboard() {
               type="link"
               size="small"
               icon={<PlusOutlined />}
-              onClick={() => router.push("/dashboard/jobs/new")}
+              onClick={() => router.push("/dashboard/jobs")}
             >
               新建任务
             </Button>
@@ -562,37 +600,97 @@ export default function Dashboard() {
           }}
         >
           {selectedJob ? (
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 16,
-                }}
-              >
-                <Title level={5} style={{ margin: 0 }}>
-                  {selectedJob.name}
-                </Title>
-                <Dropdown
-                  menu={{ items: jobMenuItems }}
-                  trigger={["click"]}
-                  placement="bottomRight"
+            <Spin spinning={loadingDetail}>
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: 16,
+                  }}
                 >
-                  <Button icon={<MoreOutlined />}>操作</Button>
-                </Dropdown>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <Text type="secondary">路径: </Text>
-                <Text>{selectedJob.path}</Text>
-              </div>
-              {selectedJob.description && (
-                <div style={{ marginBottom: 16 }}>
-                  <Text type="secondary">描述: </Text>
-                  <Text>{selectedJob.description}</Text>
+                  <Title level={5} style={{ margin: 0 }}>
+                    {selectedJob.name}
+                  </Title>
+                  <Dropdown
+                    menu={{ items: jobMenuItems }}
+                    trigger={["click"]}
+                    placement="bottomRight"
+                  >
+                    <Button icon={<MoreOutlined />}>更多</Button>
+                  </Dropdown>
                 </div>
-              )}
-            </div>
+                {selectedJob.description && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Text type="secondary">描述: </Text>
+                    <Text>{selectedJob.description}</Text>
+                  </div>
+                )}
+                
+                {/* 参数列表 */}
+                {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
+                  <div style={{ marginTop: 24 }}>
+                    <Title level={5} style={{ marginBottom: 16 }}>
+                      参数配置
+                    </Title>
+                    <Form
+                      form={runForm}
+                      layout="vertical"
+                      style={{ maxWidth: 600 }}
+                    >
+                      {jobDetail.workflow.options.map((option) => (
+                        <Form.Item
+                          key={option.id}
+                          name={option.name}
+                          label={
+                            <div>
+                              <Text strong>{option.label || option.name}</Text>
+                              {option.required && (
+                                <Text type="danger" style={{ marginLeft: 4 }}>
+                                  *
+                                </Text>
+                              )}
+                            </div>
+                          }
+                          tooltip={option.description}
+                          rules={[
+                            {
+                              required: option.required,
+                              message: `请输入${option.label || option.name}`,
+                            },
+                          ]}
+                        >
+                          {renderOptionInput(option)}
+                        </Form.Item>
+                      ))}
+                    </Form>
+                    <div style={{ marginTop: 16, textAlign: "right" }}>
+                      <Button
+                        type="primary"
+                        icon={<CaretRightOutlined />}
+                        onClick={handleRunJob}
+                      >
+                        运行
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 24 }}>
+                    <Text type="secondary">该任务没有配置参数</Text>
+                    <div style={{ marginTop: 16, textAlign: "right" }}>
+                      <Button
+                        type="primary"
+                        icon={<CaretRightOutlined />}
+                        onClick={handleRunJob}
+                      >
+                        运行
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Spin>
           ) : (
             <div style={{ textAlign: "center", padding: "50px 0" }}>
               <Empty
@@ -602,27 +700,31 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* 活动日志区域 */}
-          <div style={{ marginTop: 32, borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 16,
-              }}
-            >
-              <Title level={5} style={{ margin: 0 }}>
-                任务活动
+          {/* 任务结果区域 */}
+          {selectedJob && (
+            <div style={{ marginTop: 32, borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
+              <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
+                任务结果
               </Title>
-              <Text type="secondary">0 次执行</Text>
+              {jobResultHtml ? (
+                <div
+                  dangerouslySetInnerHTML={{ __html: jobResultHtml }}
+                  style={{
+                    padding: 16,
+                    background: "#fafafa",
+                    borderRadius: 4,
+                    border: "1px solid #f0f0f0",
+                  }}
+                />
+              ) : (
+                <Empty
+                  description="暂无执行结果"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  style={{ marginTop: 50 }}
+                />
+              )}
             </div>
-            <Empty
-              description="没有查询结果"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              style={{ marginTop: 50 }}
-            />
-          </div>
+          )}
         </Content>
       </Layout>
 

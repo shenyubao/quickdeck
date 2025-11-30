@@ -344,6 +344,34 @@ export const jobApi = {
     });
     return handleResponse<void>(response);
   },
+
+  /**
+   * 运行任务
+   */
+  async run(id: number, args?: Record<string, any>): Promise<{ output: string; result: any; error?: string }> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/${id}/run`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ args: args || {} }),
+    });
+    return handleResponse<{ output: string; result: any; error?: string }>(response);
+  },
+
+  /**
+   * 测试 Python 脚本
+   */
+  async testScript(script: string, args?: Record<string, any>): Promise<{ output: string; error?: string }> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/test-script`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ script, args: args || {} }),
+    });
+    return handleResponse<{ output: string; error?: string }>(response);
+  },
 };
 
 export const projectApi = {

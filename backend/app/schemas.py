@@ -194,3 +194,27 @@ class JobDetailResponse(JobBase):
     class Config:
         from_attributes = True
 
+
+class JobRunRequest(BaseModel):
+    """任务运行请求"""
+    args: Optional[Dict[str, Any]] = None  # 用户输入参数
+
+
+class JobRunResponse(BaseModel):
+    """任务运行响应"""
+    output: str  # HTML 输出
+    result: Dict[str, Any]  # 执行结果
+    error: Optional[str] = None  # 错误信息（如果有）
+
+
+class ScriptTestRequest(BaseModel):
+    """脚本测试请求"""
+    script: str  # Python 脚本内容
+    args: Optional[Dict[str, Any]] = None  # 测试参数
+
+
+class ScriptTestResponse(BaseModel):
+    """脚本测试响应"""
+    output: str  # 输出文本
+    error: Optional[str] = None  # 错误信息（如果有）
+

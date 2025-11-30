@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.database import get_db
 from app.models import (
     Job, Project, User, Workflow, Option, Step,
     OptionTypeEnum, InputTypeEnum, StepTypeEnum, NodeTypeEnum
 )
-from app.schemas import JobCreate, JobUpdate, JobResponse, JobDetailResponse
+from app.schemas import JobCreate, JobUpdate, JobResponse, JobDetailResponse, JobRunRequest, JobRunResponse, ScriptTestRequest, ScriptTestResponse
 from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -378,4 +378,86 @@ async def delete_job(
     db.commit()
     
     return None
+
+
+@router.post("/{job_id}/run", response_model=JobRunResponse)
+async def run_job(
+    job_id: int,
+    run_request: JobRunRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """运行任务"""
+    from app.server.job_execute_service import JobExecuteService
+    
+    # 获取任务
+    job = db.query(Job).filter(
+        Job.id == job_id,
+        Job.owner_id == current_user.id
+    ).first()
+    
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在或无权限访问"
+        )
+    
+    # 获取工作流
+    workflow = job.workflow
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务没有配置工作流"
+        )
+    
+    # 调用服务执行任务
+    return JobExecuteService.execute_job(
+        job=job,
+        workflow=workflow,
+        args=run_request.args or {},
+        user_id=current_user.id
+    )
+
+
+@router.post("/test-script", response_model=ScriptTestResponse)
+async def test_script(
+    test_request: ScriptTestRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """测试 Python 脚本"""
+    from app.executors.python_script import PythonScriptExecutor
+    
+    try:
+        # 创建执行器
+        executor = PythonScriptExecutor()
+        
+        # 准备上下文和结果
+        context = {
+            "step_extension": {
+                "script": test_request.script
+            },
+            "timeout": 300,  # 5分钟超时
+        }
+        
+        result = {
+            "text": "",
+            "dataset": None,
+        }
+        
+        # 执行脚本
+        context, result = executor.execute(
+            args=test_request.args or {},
+            context=context,
+            result=result
+        )
+        
+        return ScriptTestResponse(
+            output=result.get("text", ""),
+            error=None
+        )
+    except Exception as e:
+        return ScriptTestResponse(
+            output="",
+            error=str(e)
+        )
 

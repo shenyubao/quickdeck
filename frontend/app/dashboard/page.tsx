@@ -344,13 +344,7 @@ export default function Dashboard() {
           label: "编辑此任务...",
           icon: <EditOutlined />,
           onClick: () => {
-            setEditingJob(selectedJob);
-            form.setFieldsValue({
-              name: selectedJob.name,
-              path: selectedJob.path,
-              description: selectedJob.description || "",
-            });
-            setIsJobModalOpen(true);
+            router.push(`/dashboard/jobs/new?id=${selectedJob.id}`);
           },
         },
         {

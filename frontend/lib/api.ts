@@ -13,7 +13,7 @@ const getApiUrl = () => {
     }
     return envUrl || "http://localhost:8000";
   }
-  // 服务端：可以使用 Docker 内部网络名称
+  // 服务端：可以使用 Docker 内部网络名称 
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 };
 
@@ -135,17 +135,113 @@ export interface Job {
   updated_at?: string;
 }
 
+// Option 相关类型
+export interface OptionCreate {
+  option_type: "text" | "file";
+  name: string;
+  label?: string;
+  description?: string;
+  default_value?: string;
+  input_type?: "plain_text" | "date" | "number";
+  required?: boolean;
+  multi_valued?: boolean;
+}
+
+// Step 相关类型
+export interface StepCreate {
+  order: number;
+  step_type: "command" | "shell_script" | "python_script";
+  extension: Record<string, any>;
+}
+
+// Notification 相关类型
+export interface NotificationCreate {
+  trigger: "on_start" | "on_success" | "on_failure" | "on_retryable_fail" | "average_duration_exceeded";
+  notification_type: "webhook" | "dingtalk_webhook";
+  extensions: Record<string, any>;
+}
+
+// Option 响应类型
+export interface OptionResponse {
+  id: number;
+  option_type: "text" | "file";
+  name: string;
+  label?: string;
+  description?: string;
+  default_value?: string;
+  input_type: "plain_text" | "date" | "number";
+  required: boolean;
+  multi_valued: boolean;
+}
+
+// Step 响应类型
+export interface StepResponse {
+  id: number;
+  order: number;
+  step_type: "command" | "shell_script" | "python_script";
+  extension: Record<string, any>;
+}
+
+// Notification 响应类型
+export interface NotificationResponse {
+  trigger: "on_start" | "on_success" | "on_failure" | "on_retryable_fail" | "average_duration_exceeded";
+  notification_type: "webhook" | "dingtalk_webhook";
+  extensions: Record<string, any>;
+}
+
+// Workflow 相关类型
+export interface WorkflowCreate {
+  name: string;
+  timeout?: number; // 超时时间（分钟）
+  retry?: number; // 重试次数
+  node_type?: "local" | "remote";
+  schedule_enabled?: boolean; // 是否定时任务
+  schedule_crontab?: string; // 定时任务规则
+  schedule_timezone?: string; // 时区
+  options?: OptionCreate[]; // 参数列表
+  steps?: StepCreate[]; // 步骤列表
+  notifications?: NotificationCreate[]; // 通知规则列表
+}
+
+export interface WorkflowResponse {
+  id: number;
+  name: string;
+  timeout?: number; // 超时时间（分钟）
+  retry: number;
+  node_type: "local" | "remote";
+  schedule_enabled: boolean;
+  schedule_crontab?: string;
+  schedule_timezone: string;
+  notifications?: NotificationResponse[];
+  options: OptionResponse[];
+  steps: StepResponse[];
+}
+
 export interface JobCreate {
   name: string;
   path: string;
   description?: string;
   project_id: number;
+  workflow?: WorkflowCreate;
 }
 
 export interface JobUpdate {
   name?: string;
   path?: string;
   description?: string;
+  workflow?: WorkflowCreate;
+}
+
+export interface JobDetail {
+  id: number;
+  name: string;
+  path: string;
+  description?: string;
+  owner_id: number;
+  project_id: number;
+  created_at: string;
+  updated_at?: string;
+  workflow?: WorkflowResponse;
 }
 
 export const jobApi = {
@@ -193,6 +289,19 @@ export const jobApi = {
       headers,
     });
     return handleResponse<Job>(response);
+  },
+
+  /**
+   * 获取任务详情（包含工作流信息）
+   */
+  async getDetailById(id: number): Promise<JobDetail> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/jobs/${id}/detail`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<JobDetail>(response);
   },
 
   /**

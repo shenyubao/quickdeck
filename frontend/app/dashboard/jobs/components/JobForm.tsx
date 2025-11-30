@@ -19,6 +19,7 @@ import {
   Row,
   Col,
   Modal,
+  DatePicker,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -49,6 +50,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [testingScript, setTestingScript] = useState(false);
   const [testResult, setTestResult] = useState<{ output?: string; error?: string } | null>(null);
   const [currentTestStepIndex, setCurrentTestStepIndex] = useState<number | null>(null);
+  const [currentTestOptions, setCurrentTestOptions] = useState<any[]>([]);
   const [testArgsForm] = Form.useForm();
 
   // 如果是编辑模式，加载任务详情
@@ -147,7 +149,24 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
           try {
             extension = JSON.parse(extension);
           } catch (e) {
-            message.error(`步骤 ${step.order} 的扩展配置 JSON 格式错误`);
+            // 如果是 Python 脚本类型，且无法解析为 JSON，则视为纯代码内容
+            if (step.step_type === "python_script") {
+              extension = { script: extension };
+            } else {
+              message.error(`步骤 ${step.order} 的扩展配置 JSON 格式错误`);
+              throw new Error("扩展配置格式错误");
+            }
+          }
+        }
+        // 对于 Python 脚本，确保 extension 是对象且包含 script 字段
+        if (step.step_type === "python_script") {
+          if (typeof extension === "object" && extension !== null) {
+            if (!extension.script || typeof extension.script !== "string") {
+              message.error(`步骤 ${step.order} 的 Python 脚本内容不能为空`);
+              throw new Error("Python 脚本内容不能为空");
+            }
+          } else {
+            message.error(`步骤 ${step.order} 的扩展配置格式错误`);
             throw new Error("扩展配置格式错误");
           }
         }
@@ -263,9 +282,39 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
         return;
       }
 
+      // 获取输入参数配置
+      const options = form.getFieldValue("options") || [];
+      
       setCurrentTestStepIndex(stepIndex);
+      setCurrentTestOptions(options);
       setTestResult(null);
+      
+      // 设置默认值
+      const initialValues: Record<string, any> = {};
+      options.forEach((opt: any) => {
+        if (opt.default_value !== undefined && opt.default_value !== null && opt.default_value !== "") {
+          if (opt.multi_valued && opt.input_type === "number") {
+            // 多值数字，尝试解析为数组
+            try {
+              initialValues[opt.name] = JSON.parse(opt.default_value);
+            } catch {
+              initialValues[opt.name] = [opt.default_value];
+            }
+          } else if (opt.multi_valued) {
+            // 多值文本，尝试解析为数组或分割字符串
+            try {
+              initialValues[opt.name] = JSON.parse(opt.default_value);
+            } catch {
+              initialValues[opt.name] = opt.default_value.split(",").map((s: string) => s.trim());
+            }
+          } else {
+            initialValues[opt.name] = opt.default_value;
+          }
+        }
+      });
+      
       testArgsForm.resetFields();
+      testArgsForm.setFieldsValue(initialValues);
       setTestModalVisible(true);
     } catch (error) {
       message.error("获取脚本失败");
@@ -304,11 +353,20 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
 
       // 获取测试参数
       const testArgs = testArgsForm.getFieldsValue();
-      // 移除空值
+      // 移除空值并处理日期格式
       const args: Record<string, any> = {};
       Object.keys(testArgs).forEach((key) => {
-        if (testArgs[key] !== undefined && testArgs[key] !== null && testArgs[key] !== "") {
-          args[key] = testArgs[key];
+        const value = testArgs[key];
+        if (value !== undefined && value !== null && value !== "") {
+          // 如果是日期对象，转换为字符串
+          if (value && typeof value === "object" && "format" in value) {
+            args[key] = value.format("YYYY-MM-DD");
+          } else if (Array.isArray(value) && value.length === 0) {
+            // 跳过空数组
+            return;
+          } else {
+            args[key] = value;
+          }
         }
       });
 
@@ -716,13 +774,25 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                                     if (!parsed.script || typeof parsed.script !== "string") {
                                                       return Promise.reject(new Error("扩展配置必须包含 script 字段"));
                                                     }
+                                                    // 检查 script 内容是否为空
+                                                    if (!parsed.script.trim()) {
+                                                      return Promise.reject(new Error("Python 代码不能为空"));
+                                                    }
                                                   } catch {
-                                                    // 如果不是 JSON，可能是直接的脚本内容，需要转换为对象
+                                                    // 如果不是 JSON，可能是直接的脚本内容
+                                                    // 检查是否为空字符串
+                                                    if (!value.trim()) {
+                                                      return Promise.reject(new Error("Python 代码不能为空"));
+                                                    }
+                                                    // 允许纯代码字符串通过验证（会在提交时转换为 JSON）
                                                     return Promise.resolve();
                                                   }
                                                 } else if (typeof value === "object") {
                                                   if (!value.script || typeof value.script !== "string") {
                                                     return Promise.reject(new Error("扩展配置必须包含 script 字段"));
+                                                  }
+                                                  if (!value.script.trim()) {
+                                                    return Promise.reject(new Error("Python 代码不能为空"));
                                                   }
                                                 }
                                                 return Promise.resolve();
@@ -1168,29 +1238,150 @@ result = {"status": "success", "message": f"处理完成: {name}"}`}
         width={800}
       >
         <Form form={testArgsForm} layout="vertical">
-          <Form.Item
-            label="测试参数（可选）"
-            extra="输入 JSON 格式的参数，例如: {&quot;name&quot;: &quot;张三&quot;, &quot;age&quot;: 25}"
-          >
-            <Input.TextArea
-              placeholder='{"name": "张三", "age": 25}'
-              rows={4}
-              onChange={(e) => {
-                const value = e.target.value.trim();
-                if (value) {
-                  try {
-                    const parsed = JSON.parse(value);
-                    // 将解析后的对象设置为表单字段
-                    Object.keys(parsed).forEach((key) => {
-                      testArgsForm.setFieldValue(key, parsed[key]);
-                    });
-                  } catch {
-                    // 如果不是有效的 JSON，忽略
+          {currentTestOptions.length > 0 ? (
+            <>
+              <div style={{ marginBottom: "16px", color: "#666", fontSize: "12px" }}>
+                根据配置的输入参数填写测试值：
+              </div>
+              {currentTestOptions.map((option: any) => {
+                const label = option.label || option.name;
+                const isRequired = option.required;
+                const isMultiValued = option.multi_valued;
+                const inputType = option.input_type || "plain_text";
+                
+                // 根据 input_type 渲染不同的输入组件
+                let inputComponent;
+                
+                if (isMultiValued) {
+                  // 多值输入 - 使用 Form.Item 的 getValueFromEvent 来处理
+                  if (inputType === "number") {
+                    inputComponent = (
+                      <Input.TextArea
+                        placeholder={`输入多个数字，用逗号分隔，例如: 1, 2, 3`}
+                        rows={3}
+                      />
+                    );
+                  } else {
+                    inputComponent = (
+                      <Input.TextArea
+                        placeholder={`输入多个值，用逗号分隔，例如: 值1, 值2, 值3`}
+                        rows={3}
+                      />
+                    );
+                  }
+                } else {
+                  // 单值输入
+                  switch (inputType) {
+                    case "date":
+                      inputComponent = (
+                        <DatePicker
+                          style={{ width: "100%" }}
+                          placeholder="请选择日期"
+                          format="YYYY-MM-DD"
+                        />
+                      );
+                      break;
+                    case "number":
+                      inputComponent = (
+                        <InputNumber
+                          style={{ width: "100%" }}
+                          placeholder="请输入数字"
+                        />
+                      );
+                      break;
+                    default:
+                      inputComponent = (
+                        <Input
+                          placeholder={`请输入${label}`}
+                        />
+                      );
                   }
                 }
-              }}
-            />
-          </Form.Item>
+                
+                return (
+                  <Form.Item
+                    key={option.name}
+                    name={option.name}
+                    label={
+                      <span>
+                        {label}
+                        {isRequired && <span style={{ color: "red", marginLeft: "4px" }}>*</span>}
+                      </span>
+                    }
+                    rules={isRequired ? [{ required: true, message: `请输入${label}` }] : []}
+                    extra={option.description ? option.description : undefined}
+                    getValueFromEvent={
+                      isMultiValued
+                        ? (e: any) => {
+                            const value = e.target.value.trim();
+                            if (!value) return [];
+                            if (inputType === "number") {
+                              return value
+                                .split(",")
+                                .map((s: string) => parseFloat(s.trim()))
+                                .filter((n: number) => !isNaN(n));
+                            } else {
+                              return value
+                                .split(",")
+                                .map((s: string) => s.trim())
+                                .filter((s: string) => s);
+                            }
+                          }
+                        : undefined
+                    }
+                    normalize={
+                      isMultiValued && inputType === "number"
+                        ? (value) => {
+                            // 如果已经是数组，直接返回
+                            if (Array.isArray(value)) return value;
+                            // 如果是字符串，尝试解析
+                            if (typeof value === "string") {
+                              const parsed = value
+                                .split(",")
+                                .map((s) => parseFloat(s.trim()))
+                                .filter((n) => !isNaN(n));
+                              return parsed.length > 0 ? parsed : undefined;
+                            }
+                            return value;
+                          }
+                        : isMultiValued
+                        ? (value) => {
+                            // 如果已经是数组，直接返回
+                            if (Array.isArray(value)) return value;
+                            // 如果是字符串，分割
+                            if (typeof value === "string") {
+                              const parsed = value
+                                .split(",")
+                                .map((s) => s.trim())
+                                .filter((s) => s);
+                              return parsed.length > 0 ? parsed : undefined;
+                            }
+                            return value;
+                          }
+                        : undefined
+                    }
+                    getValueProps={
+                      isMultiValued
+                        ? (value) => {
+                            // 将数组转换为逗号分隔的字符串用于显示
+                            if (Array.isArray(value)) {
+                              return { value: value.join(", ") };
+                            }
+                            return { value: value || "" };
+                          }
+                        : undefined
+                    }
+                  >
+                    {inputComponent}
+                  </Form.Item>
+                );
+              })}
+            </>
+          ) : (
+            <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>
+              当前任务未配置输入参数，脚本将使用空参数运行
+            </div>
+          )}
         </Form>
 
         {testResult && (

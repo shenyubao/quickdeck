@@ -1,15 +1,12 @@
 """初始化数据库测试数据"""
 from sqlalchemy.orm import Session
-from app.database import SessionLocal, engine
-from app.models import Base, User
+from app.database import SessionLocal
+from app.models import User
 from app.auth import get_password_hash
 
 
 def init_db():
-    """初始化数据库并创建测试数据"""
-    # 创建所有表
-    Base.metadata.create_all(bind=engine)
-    
+    """初始化数据库测试数据（不创建表，表由 Alembic 迁移管理）"""
     db = SessionLocal()
     try:
         # 检查是否已有数据

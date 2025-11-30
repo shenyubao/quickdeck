@@ -82,7 +82,7 @@ class User(BaseModel):
     # 关系
     owned_projects = relationship("Project", back_populates="owner")
     owned_jobs = relationship("Job", back_populates="owner")
-    visible_jobs = relationship("Job", secondary="job_visible_users", back_populates="visible_jobs")
+    visible_jobs = relationship("Job", secondary="job_visible_users", back_populates="visible_users")
 
 
 # 项目模型

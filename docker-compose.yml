@@ -32,6 +32,9 @@ services:
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXTAUTH_URL=http://localhost:3000
+      - AUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret
+      - NEXTAUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret
     depends_on:
       - backend
     command: npm run dev

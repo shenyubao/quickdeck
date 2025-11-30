@@ -3,8 +3,14 @@ import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const AUTH_SECRET = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
+
+if (!AUTH_SECRET) {
+  console.warn("警告: AUTH_SECRET 或 NEXTAUTH_SECRET 环境变量未设置，这可能导致 JWT 解密错误");
+}
 
 export const authConfig = {
+  secret: AUTH_SECRET,
   providers: [
     Credentials({
       name: "credentials",
@@ -14,22 +20,42 @@ export const authConfig = {
       },
       async authorize(credentials) {
         try {
+          if (!credentials?.username || !credentials?.password) {
+            return null;
+          }
+
           const response = await fetch(`${API_URL}/api/auth/login`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              username: credentials?.username,
-              password: credentials?.password,
+              username: credentials.username,
+              password: credentials.password,
             }),
           });
 
           if (!response.ok) {
+            // 401 错误是正常的用户名/密码错误，不需要输出日志
+            if (response.status === 401) {
+              return null;
+            }
+            // 其他错误才输出日志
+            const errorText = await response.text();
+            console.error("登录 API 响应错误:", {
+              status: response.status,
+              statusText: response.statusText,
+              body: errorText,
+            });
             return null;
           }
 
           const tokenData = await response.json();
+
+          if (!tokenData?.access_token) {
+            console.error("响应中缺少 access_token:", tokenData);
+            return null;
+          }
 
           // 获取用户信息
           const userResponse = await fetch(`${API_URL}/api/auth/me`, {
@@ -39,21 +65,39 @@ export const authConfig = {
           });
 
           if (!userResponse.ok) {
+            const errorText = await userResponse.text();
+            console.error("获取用户信息失败:", {
+              status: userResponse.status,
+              statusText: userResponse.statusText,
+              body: errorText,
+            });
             return null;
           }
 
           const user = await userResponse.json();
 
+          if (!user?.id || !user?.username) {
+            console.error("用户信息不完整:", user);
+            return null;
+          }
+
           return {
             id: user.id.toString(),
             username: user.username,
-            email: user.email,
+            email: user.email || null,
             name: user.nickname || user.username,
-            isAdmin: user.is_admin,
+            isAdmin: user.is_admin || false,
             accessToken: tokenData.access_token,
           };
         } catch (error) {
+          // 网络错误或其他异常错误才输出日志
           console.error("登录错误:", error);
+          if (error instanceof Error) {
+            console.error("错误详情:", {
+              message: error.message,
+              stack: error.stack,
+            });
+          }
           return null;
         }
       },
@@ -89,6 +133,16 @@ export const authConfig = {
         return Response.redirect(new URL("/dashboard", nextUrl));
       }
       return true;
+    },
+  },
+  logger: {
+    error(error: Error) {
+      // 不输出 CredentialsSignin 错误的详细日志
+      if (error.message?.includes("CredentialsSignin") || error.name === "CredentialsSignin") {
+        return;
+      }
+      // 其他错误正常输出
+      console.error(error);
     },
   },
 } satisfies NextAuthConfig;

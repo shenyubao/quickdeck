@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Dict, Any
+import logging
 from app.database import get_db
 from app.models import (
     Job, Project, User, Workflow, Option, Step,
@@ -9,6 +10,8 @@ from app.models import (
 )
 from app.schemas import JobCreate, JobUpdate, JobResponse, JobDetailResponse, JobRunRequest, JobRunResponse, ScriptTestRequest, ScriptTestResponse
 from app.routers.auth import get_current_user
+
+logger = logging.getLogger("app.routers.jobs")
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 security = HTTPBearer()
@@ -69,7 +72,10 @@ async def get_job_detail(
     db: Session = Depends(get_db)
 ):
     """获取任务详情（包含工作流信息）"""
-    job = db.query(Job).filter(
+    job = db.query(Job).options(
+        joinedload(Job.workflow).joinedload(Workflow.options),
+        joinedload(Job.workflow).joinedload(Workflow.steps)
+    ).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
     ).first()
@@ -390,8 +396,10 @@ async def run_job(
     """运行任务"""
     from app.server.job_execute_service import JobExecuteService
     
-    # 获取任务
-    job = db.query(Job).filter(
+    # 获取任务，并预加载工作流和步骤
+    job = db.query(Job).options(
+        joinedload(Job.workflow).joinedload(Workflow.steps)
+    ).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
     ).first()
@@ -408,6 +416,32 @@ async def run_job(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="任务没有配置工作流"
+        )
+    
+    # 确保步骤被加载 - 尝试从数据库直接查询
+    steps_count = db.query(Step).filter(Step.workflow_id == workflow.id).count()
+    
+    # 检查 relationship 加载的步骤
+    steps_list = list(workflow.steps) if workflow.steps else []
+    
+    if steps_count == 0:
+        logger.warning(f"工作流 {workflow.id} 在数据库中没有步骤")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="工作流没有配置步骤，无法执行。请先为工作流添加步骤。"
+        )
+    
+    # 如果 relationship 没有加载，手动加载
+    if len(steps_list) == 0 and steps_count > 0:
+        logger.warning(f"Relationship 未加载步骤，手动从数据库加载")
+        workflow.steps = db.query(Step).filter(Step.workflow_id == workflow.id).order_by(Step.order).all()
+        steps_list = list(workflow.steps)
+    
+    if len(steps_list) == 0:
+        logger.warning(f"工作流 {workflow.id} 没有可执行的步骤")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="工作流没有配置步骤，无法执行。请先为工作流添加步骤。"
         )
     
     # 调用服务执行任务

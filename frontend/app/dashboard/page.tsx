@@ -49,12 +49,16 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [jobsInSelectedPath, setJobsInSelectedPath] = useState<Job[]>([]);
   const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [jobResultHtml, setJobResultHtml] = useState<string>("");
   const [expandedKeys, setExpandedKeysState] = useState<React.Key[]>([]);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [runForm] = Form.useForm();
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
 
   // 获取所有节点的 keys（用于展开全部）
   const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
@@ -66,6 +70,17 @@ export default function Dashboard() {
       }
     });
     return keys;
+  }, []);
+
+  // 获取所有节点（包括子节点）
+  const getAllNodes = useCallback((node: TreeNode): TreeNode[] => {
+    const nodes: TreeNode[] = [node];
+    if (node.children) {
+      node.children.forEach((child) => {
+        nodes.push(...getAllNodes(child));
+      });
+    }
+    return nodes;
   }, []);
 
   // 保存展开状态到 localStorage
@@ -253,7 +268,10 @@ export default function Dashboard() {
   const handleSelect = async (selectedKeys: React.Key[], info: any) => {
     const node = info.node as TreeNode;
     if (node.job) {
+      // 点击任务节点
       setSelectedJob(node.job);
+      setSelectedPath(null);
+      setJobsInSelectedPath([]);
       // 获取任务详情（包含 workflow）
       try {
         setLoadingDetail(true);
@@ -263,8 +281,24 @@ export default function Dashboard() {
         if (detail.workflow?.options) {
           const initialValues: Record<string, any> = {};
           detail.workflow.options.forEach((option) => {
-            if (option.default_value !== null && option.default_value !== undefined) {
-              initialValues[option.name] = option.default_value;
+            if (option.default_value !== null && option.default_value !== undefined && option.default_value !== "") {
+              if (option.multi_valued && option.input_type === "number") {
+                // 多值数字，尝试解析为数组
+                try {
+                  initialValues[option.name] = JSON.parse(option.default_value);
+                } catch {
+                  initialValues[option.name] = [option.default_value];
+                }
+              } else if (option.multi_valued) {
+                // 多值文本，尝试解析为数组或分割字符串
+                try {
+                  initialValues[option.name] = JSON.parse(option.default_value);
+                } catch {
+                  initialValues[option.name] = option.default_value.split(",").map((s: string) => s.trim());
+                }
+              } else {
+                initialValues[option.name] = option.default_value;
+              }
             }
           });
           runForm.setFieldsValue(initialValues);
@@ -276,9 +310,23 @@ export default function Dashboard() {
         setLoadingDetail(false);
       }
     } else {
+      // 点击路径节点 - 显示路径信息和该路径下的所有任务
       setSelectedJob(null);
       setJobDetail(null);
       runForm.resetFields();
+      
+      // 收集该路径下的所有任务
+      const pathKey = node.key as string;
+      const pathPrefix = pathKey.replace("path-", "");
+      setSelectedPath(pathPrefix);
+      
+      // 获取该路径及其子路径下的所有任务
+      const jobsInPath = jobs.filter((job) => {
+        const jobPath = job.path.startsWith("/") ? job.path.slice(1) : job.path;
+        // 匹配路径前缀，包括直接在该路径下的任务
+        return jobPath === pathPrefix || jobPath.startsWith(pathPrefix + "/");
+      });
+      setJobsInSelectedPath(jobsInPath);
     }
   };
 
@@ -453,14 +501,53 @@ export default function Dashboard() {
     
     try {
       const values = await runForm.validateFields();
-      // TODO: 调用运行任务的 API
-      message.info("运行任务功能待实现");
-      console.log("运行任务参数:", values);
+      
+      // 处理参数格式
+      const args: Record<string, any> = {};
+      Object.keys(values).forEach((key) => {
+        const value = values[key];
+        if (value !== undefined && value !== null && value !== "") {
+          // 如果是日期对象，转换为字符串
+          if (value && typeof value === "object" && "format" in value) {
+            args[key] = value.format("YYYY-MM-DD");
+          } else if (Array.isArray(value) && value.length === 0) {
+            // 跳过空数组
+            return;
+          } else {
+            // Form.Item 已经处理了多值输入的转换，这里直接使用
+            args[key] = value;
+          }
+        }
+      });
+
+      setRunning(true);
+      setRunError(null);
+      setJobResultHtml("");
+
+      // 调用运行任务的 API
+      const result = await jobApi.run(selectedJob.id, Object.keys(args).length > 0 ? args : undefined);
+      
+      // 显示结果
+      if (result.error) {
+        setRunError(result.error);
+        setJobResultHtml("");
+      } else {
+        setRunError(null);
+        // 后端返回的是 HTML 格式的 output
+        setJobResultHtml(result.output || "");
+      }
+      
+      message.success("任务运行完成");
     } catch (error) {
       if (error instanceof Error && error.message.includes("验证")) {
         return;
       }
-      message.error(error instanceof Error ? error.message : "运行失败");
+      const errorMessage = error instanceof Error ? error.message : "运行失败";
+      message.error(errorMessage);
+      setRunError(errorMessage);
+      setJobResultHtml("");
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -476,6 +563,25 @@ export default function Dashboard() {
       );
     }
 
+    if (multi_valued) {
+      // 多值输入
+      if (input_type === "number") {
+        return (
+          <Input.TextArea
+            rows={3}
+            placeholder={`输入多个数字，用逗号分隔，例如: 1, 2, 3`}
+          />
+        );
+      } else {
+        return (
+          <Input.TextArea
+            rows={3}
+            placeholder={`输入多个值，用逗号分隔，例如: 值1, 值2, 值3`}
+          />
+        );
+      }
+    }
+
     switch (input_type) {
       case "date":
         return <DatePicker style={{ width: "100%" }} />;
@@ -483,9 +589,6 @@ export default function Dashboard() {
         return <InputNumber style={{ width: "100%" }} />;
       case "plain_text":
       default:
-        if (multi_valued) {
-          return <Input.TextArea rows={3} placeholder={`请输入${option.label || option.name}`} />;
-        }
         return <Input placeholder={`请输入${option.label || option.name}`} />;
     }
   };
@@ -546,7 +649,13 @@ export default function Dashboard() {
               {treeData.length > 0 ? (
                 <Tree
                   treeData={treeData}
-                  selectedKeys={selectedJob ? [`job-${selectedJob.id}`] : []}
+                  selectedKeys={
+                    selectedJob 
+                      ? [`job-${selectedJob.id}`] 
+                      : selectedPath 
+                        ? [`path-${selectedPath}`] 
+                        : []
+                  }
                   expandedKeys={expandedKeys}
                   onSelect={handleSelect}
                   onExpand={setExpandedKeys}
@@ -599,7 +708,85 @@ export default function Dashboard() {
             overflow: "auto",
           }}
         >
-          {selectedJob ? (
+          {selectedPath ? (
+            <div>
+              <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
+                路径: {selectedPath}
+              </Title>
+              <div style={{ marginBottom: 16 }}>
+                <Text type="secondary">
+                  该路径下共有 {jobsInSelectedPath.length} 个任务
+                </Text>
+              </div>
+              {jobsInSelectedPath.length > 0 ? (
+                <div>
+                  <Title level={5} style={{ marginBottom: 16 }}>
+                    任务列表
+                  </Title>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {jobsInSelectedPath.map((job) => (
+                      <div
+                        key={job.id}
+                        style={{
+                          padding: 12,
+                          border: "1px solid #f0f0f0",
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = "#1890ff";
+                          e.currentTarget.style.backgroundColor = "#f0f8ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "#f0f0f0";
+                          e.currentTarget.style.backgroundColor = "transparent";
+                        }}
+                        onClick={() => {
+                          // 触发任务节点的选择
+                          const jobNode = treeData
+                            .flatMap((node) => getAllNodes(node))
+                            .find((n) => n.key === `job-${job.id}`);
+                          if (jobNode) {
+                            handleSelect([jobNode.key], { node: jobNode });
+                          }
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <Text strong>{job.name}</Text>
+                            {job.description && (
+                              <div style={{ marginTop: 4 }}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  {job.description}
+                                </Text>
+                              </div>
+                            )}
+                          </div>
+                          <Button
+                            type="link"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/dashboard/jobs?id=${job.id}`);
+                            }}
+                          >
+                            编辑
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <Empty
+                  description="该路径下暂无任务"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  style={{ marginTop: 50 }}
+                />
+              )}
+            </div>
+          ) : selectedJob ? (
             <Spin spinning={loadingDetail}>
               <div>
                 <div
@@ -629,66 +816,120 @@ export default function Dashboard() {
                 )}
                 
                 {/* 参数列表 */}
-                {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
-                  <div style={{ marginTop: 24 }}>
-                    <Title level={5} style={{ marginBottom: 16 }}>
-                      参数配置
-                    </Title>
-                    <Form
-                      form={runForm}
-                      layout="vertical"
-                      style={{ maxWidth: 600 }}
-                    >
-                      {jobDetail.workflow.options.map((option) => (
-                        <Form.Item
-                          key={option.id}
-                          name={option.name}
-                          label={
-                            <div>
-                              <Text strong>{option.label || option.name}</Text>
-                              {option.required && (
-                                <Text type="danger" style={{ marginLeft: 4 }}>
-                                  *
-                                </Text>
-                              )}
-                            </div>
-                          }
-                          tooltip={option.description}
-                          rules={[
-                            {
-                              required: option.required,
-                              message: `请输入${option.label || option.name}`,
-                            },
-                          ]}
-                        >
-                          {renderOptionInput(option)}
-                        </Form.Item>
-                      ))}
-                    </Form>
-                    <div style={{ marginTop: 16, textAlign: "right" }}>
-                      <Button
-                        type="primary"
-                        icon={<CaretRightOutlined />}
-                        onClick={handleRunJob}
-                      >
-                        运行
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 24 }}>
+                <div style={{ marginTop: 24 }}>
+                  {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
+                    <>
+                      <Title level={5} style={{ marginBottom: 16 }}>
+                        参数配置
+                      </Title>
+                    </>
+                  ) : (
                     <Text type="secondary">该任务没有配置参数</Text>
-                    <div style={{ marginTop: 16, textAlign: "right" }}>
-                      <Button
-                        type="primary"
-                        icon={<CaretRightOutlined />}
-                        onClick={handleRunJob}
+                  )}
+                  <Form
+                    form={runForm}
+                    layout="vertical"
+                    style={{ maxWidth: 600 }}
+                  >
+                    {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => (
+                      <Form.Item
+                        key={option.id}
+                        name={option.name}
+                        label={
+                          <div>
+                            <Text strong>{option.label || option.name}</Text>
+                            {option.required && (
+                              <Text type="danger" style={{ marginLeft: 4 }}>
+                                *
+                              </Text>
+                            )}
+                          </div>
+                        }
+                        tooltip={option.description}
+                        rules={[
+                          {
+                            required: option.required,
+                            message: `请输入${option.label || option.name}`,
+                          },
+                        ]}
+                        getValueFromEvent={
+                          option.multi_valued
+                            ? (e: any) => {
+                                const value = e.target.value.trim();
+                                if (!value) return [];
+                                if (option.input_type === "number") {
+                                  return value
+                                    .split(",")
+                                    .map((s: string) => parseFloat(s.trim()))
+                                    .filter((n: number) => !isNaN(n));
+                                } else {
+                                  return value
+                                    .split(",")
+                                    .map((s: string) => s.trim())
+                                    .filter((s: string) => s);
+                                }
+                              }
+                            : undefined
+                        }
+                        normalize={
+                          option.multi_valued && option.input_type === "number"
+                            ? (value) => {
+                                // 如果已经是数组，直接返回
+                                if (Array.isArray(value)) return value;
+                                // 如果是字符串，尝试解析
+                                if (typeof value === "string") {
+                                  const parsed = value
+                                    .split(",")
+                                    .map((s) => parseFloat(s.trim()))
+                                    .filter((n) => !isNaN(n));
+                                  return parsed.length > 0 ? parsed : undefined;
+                                }
+                                return value;
+                              }
+                            : option.multi_valued
+                            ? (value) => {
+                                // 如果已经是数组，直接返回
+                                if (Array.isArray(value)) return value;
+                                // 如果是字符串，分割
+                                if (typeof value === "string") {
+                                  const parsed = value
+                                    .split(",")
+                                    .map((s) => s.trim())
+                                    .filter((s) => s);
+                                  return parsed.length > 0 ? parsed : undefined;
+                                }
+                                return value;
+                              }
+                            : undefined
+                        }
+                        getValueProps={
+                          option.multi_valued
+                            ? (value) => {
+                                // 将数组转换为逗号分隔的字符串用于显示
+                                if (Array.isArray(value)) {
+                                  return { value: value.join(", ") };
+                                }
+                                return { value: value || "" };
+                              }
+                            : undefined
+                        }
                       >
-                        运行
-                      </Button>
-                    </div>
+                        {renderOptionInput(option)}
+                      </Form.Item>
+                    ))}
+                  </Form>
+                  <div style={{ marginTop: 16, textAlign: "right" }}>
+                    <Button
+                      type="primary"
+                      icon={<CaretRightOutlined />}
+                      onClick={handleRunJob}
+                      loading={running}
+                      disabled={running}
+                    >
+                      {running ? "运行中..." : "运行"}
+                    </Button>
                   </div>
-                )}
+                </div>
               </div>
             </Spin>
           ) : (
@@ -706,7 +947,27 @@ export default function Dashboard() {
               <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
                 任务结果
               </Title>
-              {jobResultHtml ? (
+              {running ? (
+                <div style={{ textAlign: "center", padding: "50px 0" }}>
+                  <Spin size="large" />
+                  <div style={{ marginTop: 16, color: "#666" }}>任务正在运行中...</div>
+                </div>
+              ) : runError ? (
+                <div
+                  style={{
+                    padding: 16,
+                    background: "#fff2f0",
+                    borderRadius: 4,
+                    border: "1px solid #ffccc7",
+                    color: "#cf1322",
+                  }}
+                >
+                  <Text strong>执行失败：</Text>
+                  <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {runError}
+                  </pre>
+                </div>
+              ) : jobResultHtml ? (
                 <div
                   dangerouslySetInnerHTML={{ __html: jobResultHtml }}
                   style={{
@@ -714,6 +975,8 @@ export default function Dashboard() {
                     background: "#fafafa",
                     borderRadius: 4,
                     border: "1px solid #f0f0f0",
+                    maxHeight: "600px",
+                    overflow: "auto",
                   }}
                 />
               ) : (

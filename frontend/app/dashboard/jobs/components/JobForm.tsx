@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -31,7 +31,6 @@ import { jobApi, type Project } from "@/lib/api";
 import PythonCodeEditor from "./PythonCodeEditor";
 
 const { Title } = Typography;
-const { TabPane } = Tabs;
 
 interface JobFormProps {
   jobId?: number | null;
@@ -52,6 +51,8 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [currentTestStepIndex, setCurrentTestStepIndex] = useState<number | null>(null);
   const [currentTestOptions, setCurrentTestOptions] = useState<any[]>([]);
   const [testArgsForm] = Form.useForm();
+  // 保存加载的原始数据，用于在提交时补充未访问 tab 的字段
+  const [loadedFormData, setLoadedFormData] = useState<any>(null);
 
   // 如果是编辑模式，加载任务详情
   useEffect(() => {
@@ -118,6 +119,8 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
           formValues.notifications = [];
         }
         
+        // 保存原始数据，用于在提交时补充未访问 tab 的字段
+        setLoadedFormData(formValues);
         form.setFieldsValue(formValues);
       } catch (error) {
         console.error("加载任务详情失败:", error);
@@ -142,8 +145,27 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
 
       setSubmitting(true);
 
+      // 获取所有表单字段值（包括未访问的 tab 中的字段）
+      // 这样可以确保即使没有打开某个 tab，也能获取到已加载的数据
+      const allFormValues = form.getFieldsValue();
+      
+      // 合并验证后的值、所有表单值和加载的原始数据
+      // 优先级：验证后的值 > 表单中的值 > 加载的原始数据（仅编辑模式）> 默认值
+      // 在编辑模式下，如果用户没有访问某个 tab，使用加载的原始数据来补充
+      const baseData = isEditMode && loadedFormData ? loadedFormData : {};
+      const mergedValues = {
+        ...baseData,
+        ...allFormValues,
+        ...values,
+        // 对于数组字段，如果验证结果中没有该字段（undefined），则依次使用表单中的值、加载的原始数据（仅编辑模式）
+        // 这样可以避免未访问的 tab 导致字段丢失
+        options: values.options ?? allFormValues.options ?? (isEditMode ? loadedFormData?.options : undefined) ?? [],
+        steps: values.steps ?? allFormValues.steps ?? (isEditMode ? loadedFormData?.steps : undefined) ?? [],
+        notifications: values.notifications ?? allFormValues.notifications ?? (isEditMode ? loadedFormData?.notifications : undefined) ?? [],
+      };
+
       // 处理步骤的扩展配置（解析 JSON 字符串）
-      const processedSteps = (values.steps || []).map((step: any) => {
+      const processedSteps = (mergedValues.steps || []).map((step: any) => {
         let extension = step.extension;
         if (typeof extension === "string") {
           try {
@@ -177,7 +199,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       });
 
       // 处理通知的扩展配置（解析 JSON 字符串）
-      const processedNotifications = (values.notifications || []).map((notification: any) => {
+      const processedNotifications = (mergedValues.notifications || []).map((notification: any) => {
         let extensions = notification.extensions;
         if (typeof extensions === "string") {
           try {
@@ -195,14 +217,14 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
 
       // 构建工作流数据
       const workflowData: any = {
-        name: values.name || "默认工作流",
-        timeout: values.timeout,
-        retry: values.retry ?? 0,
-        node_type: values.node_type || "local",
-        schedule_enabled: values.schedule_enabled || false,
-        schedule_crontab: values.schedule_crontab,
-        schedule_timezone: values.schedule_timezone || "UTC",
-        options: values.options || [],
+        name: mergedValues.name || "默认工作流",
+        timeout: mergedValues.timeout,
+        retry: mergedValues.retry ?? 0,
+        node_type: mergedValues.node_type || "local",
+        schedule_enabled: mergedValues.schedule_enabled || false,
+        schedule_crontab: mergedValues.schedule_crontab,
+        schedule_timezone: mergedValues.schedule_timezone || "UTC",
+        options: mergedValues.options || [],
         steps: processedSteps,
         notifications: processedNotifications,
       };
@@ -210,18 +232,18 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       if (isEditMode && jobId) {
         // 更新任务
         await jobApi.update(jobId, {
-          name: values.name,
-          path: values.path,
-          description: values.description,
+          name: mergedValues.name,
+          path: mergedValues.path,
+          description: mergedValues.description,
           workflow: workflowData,
         });
         message.success("任务更新成功");
       } else {
         // 创建任务
         await jobApi.create({
-          name: values.name,
-          path: values.path,
-          description: values.description,
+          name: mergedValues.name,
+          path: mergedValues.path,
+          description: mergedValues.description,
           project_id: currentProject.id,
           workflow: workflowData,
         });
@@ -384,49 +406,13 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
     }
   };
 
-  return (
-    <Card>
-      <Space direction="vertical" size="large" style={{ width: "100%" }}>
-        {/* 头部 */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Space>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={handleCancel}
-            >
-              返回
-            </Button>
-            <Title level={3} style={{ margin: 0 }}>
-              {isEditMode ? "编辑任务" : "新建任务"}
-            </Title>
-          </Space>
-        </div>
-
-        {/* 表单 */}
-        <Spin spinning={loadingJob}>
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleSubmit}
-            initialValues={{
-              retry: 0,
-              node_type: "local",
-              schedule_enabled: false,
-              schedule_timezone: "UTC",
-              options: [],
-              steps: [],
-              notifications: [],
-            }}
-          >
-            <Tabs defaultActiveKey="basic" type="card">
-              {/* Tab 1: 基础信息 */}
-              <TabPane tab="基础信息" key="basic">
+  // 生成 Tabs items
+  const tabItems = useMemo(() => {
+    return [
+      {
+        key: "basic",
+        label: "基础信息",
+        children: (
                 <div style={{ maxWidth: 800, padding: "20px 0" }}>
                   <Form.Item
                     name="name"
@@ -468,385 +454,389 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                     />
                   </Form.Item>
                 </div>
-              </TabPane>
-
-              {/* Tab 2: 输入参数 */}
-              <TabPane tab="输入参数" key="inputs">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Title level={5}>参数列表</Title>
-                  <Form.List name="options">
-                    {(fields, { add, remove }) => (
-                      <>
-                        {fields.map(({ key, name, ...restField }) => (
-                          <div
-                            key={key}
-                            style={{
-                              border: "1px solid #d9d9d9",
-                              borderRadius: "4px",
-                              padding: "12px",
-                              marginBottom: "12px",
-                              backgroundColor: "#fafafa",
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "12px",
-                              }}
-                            >
-                              <Typography.Text strong>
-                                参数 {name + 1}
-                              </Typography.Text>
-                              <Button
-                                type="text"
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                onClick={() => remove(name)}
-                              >
-                                移除
-                              </Button>
-                            </div>
-                            <Row gutter={[16, 8]}>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "option_type"]}
-                                  label="参数类型"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  rules={[
-                                    { required: true, message: "请选择参数类型" },
-                                  ]}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Select placeholder="请选择参数类型">
-                                    <Select.Option value="text">文本</Select.Option>
-                                    <Select.Option value="file">文件</Select.Option>
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "name"]}
-                                  label="参数名称"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  rules={[
-                                    { required: true, message: "请输入参数名称" },
-                                  ]}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Input placeholder="请输入参数名称" />
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "label"]}
-                                  label="参数标签"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Input placeholder="请输入参数标签（可选）" />
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "input_type"]}
-                                  label="输入类型"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  initialValue="plain_text"
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Select>
-                                    <Select.Option value="plain_text">纯文本</Select.Option>
-                                    <Select.Option value="date">日期</Select.Option>
-                                    <Select.Option value="number">数字</Select.Option>
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "default_value"]}
-                                  label="默认值"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Input placeholder="请输入默认值（可选）" />
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "required"]}
-                                  label="必填"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  valuePropName="checked"
-                                  initialValue={false}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Switch checkedChildren="是" unCheckedChildren="否" />
-                                </Form.Item>
-                              </Col>
-                              <Col span={24}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "description"]}
-                                  label="参数描述"
-                                  labelCol={{ span: 3 }}
-                                  wrapperCol={{ span: 21 }}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Input.TextArea
-                                    placeholder="请输入参数描述（可选）"
-                                    rows={2}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "multi_valued"]}
-                                  label="多值"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  valuePropName="checked"
-                                  initialValue={false}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Switch checkedChildren="是" unCheckedChildren="否" />
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          </div>
-                        ))}
+        ),
+      },
+      {
+        key: "inputs",
+        label: "输入参数",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Title level={5}>参数列表</Title>
+            <Form.List name="options">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <div
+                      key={key}
+                      style={{
+                        border: "1px solid #d9d9d9",
+                        borderRadius: "4px",
+                        padding: "12px",
+                        marginBottom: "12px",
+                        backgroundColor: "#fafafa",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <Typography.Text strong>
+                          参数 {name + 1}
+                        </Typography.Text>
                         <Button
-                          type="dashed"
-                          onClick={() => add()}
-                          block
-                          icon={<PlusOutlined />}
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(name)}
                         >
-                          新增参数
+                          移除
                         </Button>
-                      </>
-                    )}
-                  </Form.List>
-                </div>
-              </TabPane>
-
-              {/* Tab 3: 步骤 */}
-              <TabPane tab="步骤" key="steps">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Title level={5}>步骤列表</Title>
-                  <Form.List name="steps">
-                    {(fields, { add, remove }) => (
-                      <>
-                        {fields.map(({ key, name, ...restField }) => (
-                          <div
-                            key={key}
-                            style={{
-                              border: "1px solid #d9d9d9",
-                              borderRadius: "4px",
-                              padding: "12px",
-                              marginBottom: "12px",
-                              backgroundColor: "#fafafa",
-                            }}
+                      </div>
+                      <Row gutter={[16, 8]}>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "option_type"]}
+                            label="参数类型"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            rules={[
+                              { required: true, message: "请选择参数类型" },
+                            ]}
+                            style={{ marginBottom: "8px" }}
                           >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "12px",
+                            <Select placeholder="请选择参数类型">
+                              <Select.Option value="text">文本</Select.Option>
+                              <Select.Option value="file">文件</Select.Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "name"]}
+                            label="参数名称"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            rules={[
+                              { required: true, message: "请输入参数名称" },
+                            ]}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Input placeholder="请输入参数名称" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "label"]}
+                            label="参数标签"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Input placeholder="请输入参数标签（可选）" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "input_type"]}
+                            label="输入类型"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            initialValue="plain_text"
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Select>
+                              <Select.Option value="plain_text">纯文本</Select.Option>
+                              <Select.Option value="date">日期</Select.Option>
+                              <Select.Option value="number">数字</Select.Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "default_value"]}
+                            label="默认值"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Input placeholder="请输入默认值（可选）" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "required"]}
+                            label="必填"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            valuePropName="checked"
+                            initialValue={false}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Switch checkedChildren="是" unCheckedChildren="否" />
+                          </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "description"]}
+                            label="参数描述"
+                            labelCol={{ span: 3 }}
+                            wrapperCol={{ span: 21 }}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Input.TextArea
+                              placeholder="请输入参数描述（可选）"
+                              rows={2}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "multi_valued"]}
+                            label="多值"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            valuePropName="checked"
+                            initialValue={false}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Switch checkedChildren="是" unCheckedChildren="否" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </div>
+                  ))}
+                  <Button
+                    type="dashed"
+                    onClick={() => add()}
+                    block
+                    icon={<PlusOutlined />}
+                  >
+                    新增参数
+                  </Button>
+                </>
+              )}
+            </Form.List>
+          </div>
+        ),
+      },
+      {
+        key: "steps",
+        label: "步骤",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Title level={5}>步骤列表</Title>
+            <Form.List name="steps">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <div
+                      key={key}
+                      style={{
+                        border: "1px solid #d9d9d9",
+                        borderRadius: "4px",
+                        padding: "12px",
+                        marginBottom: "12px",
+                        backgroundColor: "#fafafa",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <Typography.Text strong>
+                          步骤 {name + 1}
+                        </Typography.Text>
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(name)}
+                        >
+                          移除
+                        </Button>
+                      </div>
+                      <Row gutter={[16, 8]}>
+                        <Col span={8}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "order"]}
+                            label="步骤顺序"
+                            labelCol={{ span: 8 }}
+                            wrapperCol={{ span: 16 }}
+                            rules={[
+                              { required: true, message: "请输入步骤顺序" },
+                            ]}
+                            initialValue={name + 1}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <InputNumber
+                              min={1}
+                              placeholder="步骤顺序"
+                              style={{ width: "100%" }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={16}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "step_type"]}
+                            label="步骤类型"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            rules={[
+                              { required: true, message: "请选择步骤类型" },
+                            ]}
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Select
+                              placeholder="请选择步骤类型"
+                              onChange={(value) => {
+                                // 当选择 Python 脚本时，初始化 extension
+                                if (value === "python_script") {
+                                  const currentExtension = form.getFieldValue(["steps", name, "extension"]);
+                                  // 如果 extension 为空或者是其他格式，初始化为包含空 script 的 JSON
+                                  if (!currentExtension || (typeof currentExtension === "string" && !currentExtension.includes("script"))) {
+                                    form.setFieldValue(
+                                      ["steps", name, "extension"],
+                                      JSON.stringify({ script: "" }, null, 2)
+                                    );
+                                  }
+                                }
                               }}
                             >
-                              <Typography.Text strong>
-                                步骤 {name + 1}
-                              </Typography.Text>
-                              <Button
-                                type="text"
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                onClick={() => remove(name)}
-                              >
-                                移除
-                              </Button>
-                            </div>
-                            <Row gutter={[16, 8]}>
-                              <Col span={8}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "order"]}
-                                  label="步骤顺序"
-                                  labelCol={{ span: 8 }}
-                                  wrapperCol={{ span: 16 }}
-                                  rules={[
-                                    { required: true, message: "请输入步骤顺序" },
-                                  ]}
-                                  initialValue={name + 1}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <InputNumber
-                                    min={1}
-                                    placeholder="步骤顺序"
-                                    style={{ width: "100%" }}
-                                  />
-                                </Form.Item>
-                              </Col>
-                              <Col span={16}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "step_type"]}
-                                  label="步骤类型"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  rules={[
-                                    { required: true, message: "请选择步骤类型" },
-                                  ]}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Select
-                                    placeholder="请选择步骤类型"
-                                    onChange={(value) => {
-                                      // 当选择 Python 脚本时，初始化 extension
-                                      if (value === "python_script") {
-                                        const currentExtension = form.getFieldValue(["steps", name, "extension"]);
-                                        // 如果 extension 为空或者是其他格式，初始化为包含空 script 的 JSON
-                                        if (!currentExtension || (typeof currentExtension === "string" && !currentExtension.includes("script"))) {
-                                          form.setFieldValue(
-                                            ["steps", name, "extension"],
-                                            JSON.stringify({ script: "" }, null, 2)
-                                          );
-                                        }
-                                      }
-                                    }}
+                              <Select.Option value="command">命令</Select.Option>
+                              <Select.Option value="shell_script">Shell脚本</Select.Option>
+                              <Select.Option value="python_script">Python脚本</Select.Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                          <Form.Item
+                            noStyle
+                            shouldUpdate={(prevValues, currentValues) => {
+                              const prevStepType = prevValues.steps?.[name]?.step_type;
+                              const currentStepType = currentValues.steps?.[name]?.step_type;
+                              return prevStepType !== currentStepType;
+                            }}
+                          >
+                            {({ getFieldValue }) => {
+                              const stepType = getFieldValue(["steps", name, "step_type"]);
+                              const isPythonScript = stepType === "python_script";
+                              
+                              if (isPythonScript) {
+                                // Python 脚本：显示代码编辑器
+                                return (
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "extension"]}
+                                    label="Python 代码"
+                                    labelCol={{ span: 3 }}
+                                    wrapperCol={{ span: 21 }}
+                                    rules={[
+                                      { required: true, message: "请输入 Python 代码" },
+                                      {
+                                        validator: (_, value) => {
+                                          if (!value) {
+                                            return Promise.resolve();
+                                          }
+                                          // 如果是字符串，尝试解析为 JSON
+                                          if (typeof value === "string") {
+                                            try {
+                                              const parsed = JSON.parse(value);
+                                              if (!parsed.script || typeof parsed.script !== "string") {
+                                                return Promise.reject(new Error("扩展配置必须包含 script 字段"));
+                                              }
+                                              // 检查 script 内容是否为空
+                                              if (!parsed.script.trim()) {
+                                                return Promise.reject(new Error("Python 代码不能为空"));
+                                              }
+                                            } catch {
+                                              // 如果不是 JSON，可能是直接的脚本内容
+                                              // 检查是否为空字符串
+                                              if (!value.trim()) {
+                                                return Promise.reject(new Error("Python 代码不能为空"));
+                                              }
+                                              // 允许纯代码字符串通过验证（会在提交时转换为 JSON）
+                                              return Promise.resolve();
+                                            }
+                                          } else if (typeof value === "object") {
+                                            if (!value.script || typeof value.script !== "string") {
+                                              return Promise.reject(new Error("扩展配置必须包含 script 字段"));
+                                            }
+                                            if (!value.script.trim()) {
+                                              return Promise.reject(new Error("Python 代码不能为空"));
+                                            }
+                                          }
+                                          return Promise.resolve();
+                                        },
+                                      },
+                                    ]}
+                                    style={{ marginBottom: "8px" }}
                                   >
-                                    <Select.Option value="command">命令</Select.Option>
-                                    <Select.Option value="shell_script">Shell脚本</Select.Option>
-                                    <Select.Option value="python_script">Python脚本</Select.Option>
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                              <Col span={24}>
-                                <Form.Item
-                                  noStyle
-                                  shouldUpdate={(prevValues, currentValues) => {
-                                    const prevStepType = prevValues.steps?.[name]?.step_type;
-                                    const currentStepType = currentValues.steps?.[name]?.step_type;
-                                    return prevStepType !== currentStepType;
-                                  }}
-                                >
-                                  {({ getFieldValue }) => {
-                                    const stepType = getFieldValue(["steps", name, "step_type"]);
-                                    const isPythonScript = stepType === "python_script";
-                                    
-                                    if (isPythonScript) {
-                                      // Python 脚本：显示代码编辑器
-                                      return (
-                                        <Form.Item
-                                          {...restField}
-                                          name={[name, "extension"]}
-                                          label="Python 代码"
-                                          labelCol={{ span: 3 }}
-                                          wrapperCol={{ span: 21 }}
-                                          rules={[
-                                            { required: true, message: "请输入 Python 代码" },
-                                            {
-                                              validator: (_, value) => {
-                                                if (!value) {
-                                                  return Promise.resolve();
-                                                }
-                                                // 如果是字符串，尝试解析为 JSON
-                                                if (typeof value === "string") {
-                                                  try {
-                                                    const parsed = JSON.parse(value);
-                                                    if (!parsed.script || typeof parsed.script !== "string") {
-                                                      return Promise.reject(new Error("扩展配置必须包含 script 字段"));
-                                                    }
-                                                    // 检查 script 内容是否为空
-                                                    if (!parsed.script.trim()) {
-                                                      return Promise.reject(new Error("Python 代码不能为空"));
-                                                    }
-                                                  } catch {
-                                                    // 如果不是 JSON，可能是直接的脚本内容
-                                                    // 检查是否为空字符串
-                                                    if (!value.trim()) {
-                                                      return Promise.reject(new Error("Python 代码不能为空"));
-                                                    }
-                                                    // 允许纯代码字符串通过验证（会在提交时转换为 JSON）
-                                                    return Promise.resolve();
-                                                  }
-                                                } else if (typeof value === "object") {
-                                                  if (!value.script || typeof value.script !== "string") {
-                                                    return Promise.reject(new Error("扩展配置必须包含 script 字段"));
-                                                  }
-                                                  if (!value.script.trim()) {
-                                                    return Promise.reject(new Error("Python 代码不能为空"));
-                                                  }
-                                                }
-                                                return Promise.resolve();
-                                              },
-                                            },
-                                          ]}
-                                          style={{ marginBottom: "8px" }}
+                                    <div>
+                                      <div style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                        <span style={{ fontSize: "12px", color: "#666" }}>
+                                          输入 Python 代码，代码将自动保存为 JSON 格式
+                                        </span>
+                                        <Button
+                                          type="primary"
+                                          size="small"
+                                          icon={<PlayCircleOutlined />}
+                                          onClick={() => handleTestScript(name)}
                                         >
-                                          <div>
-                                            <div style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                              <span style={{ fontSize: "12px", color: "#666" }}>
-                                                输入 Python 代码，代码将自动保存为 JSON 格式
-                                              </span>
-                                              <Button
-                                                type="primary"
-                                                size="small"
-                                                icon={<PlayCircleOutlined />}
-                                                onClick={() => handleTestScript(name)}
-                                              >
-                                                试运行
-                                              </Button>
-                                            </div>
-                                            {/* 参数引用提示和示例 */}
-                                            <div
-                                              style={{
-                                                marginBottom: "12px",
-                                                padding: "12px",
-                                                backgroundColor: "#f0f7ff",
-                                                border: "1px solid #91caff",
-                                                borderRadius: "4px",
-                                                fontSize: "12px",
-                                              }}
-                                            >
-                                              <div style={{ marginBottom: "8px", fontWeight: "bold", color: "#1890ff" }}>
-                                                💡 参数引用说明：
-                                              </div>
-                                              <div style={{ marginBottom: "8px", color: "#666" }}>
-                                                在代码中通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args</code> 字典访问输入参数。
-                                                例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>name</code>，则使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args.get("name")</code> 或 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args["name"]</code>
-                                              </div>
-                                              <details style={{ cursor: "pointer" }}>
-                                                <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例代码</summary>
-                                                <pre
-                                                  style={{
-                                                    marginTop: "8px",
-                                                    padding: "8px",
-                                                    backgroundColor: "#fff",
-                                                    borderRadius: "4px",
-                                                    fontSize: "11px",
-                                                    overflow: "auto",
-                                                    whiteSpace: "pre-wrap",
-                                                    wordBreak: "break-word",
-                                                  }}
-                                                >
+                                          试运行
+                                        </Button>
+                                      </div>
+                                      {/* 参数引用提示和示例 */}
+                                      <div
+                                        style={{
+                                          marginBottom: "12px",
+                                          padding: "12px",
+                                          backgroundColor: "#f0f7ff",
+                                          border: "1px solid #91caff",
+                                          borderRadius: "4px",
+                                          fontSize: "12px",
+                                        }}
+                                      >
+                                        <div style={{ marginBottom: "8px", fontWeight: "bold", color: "#1890ff" }}>
+                                          💡 参数引用说明：
+                                        </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          在代码中通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args</code> 字典访问输入参数。
+                                          例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>name</code>，则使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args.get("name")</code> 或 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args["name"]</code>
+                                        </div>
+                                        <details style={{ cursor: "pointer" }}>
+                                          <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例代码</summary>
+                                          <pre
+                                            style={{
+                                              marginTop: "8px",
+                                              padding: "8px",
+                                              backgroundColor: "#fff",
+                                              borderRadius: "4px",
+                                              fontSize: "11px",
+                                              overflow: "auto",
+                                              whiteSpace: "pre-wrap",
+                                              wordBreak: "break-word",
+                                            }}
+                                          >
 {`# 示例：获取参数并处理
 name = args.get("name", "默认值")
 age = args.get("age", 0)
@@ -856,334 +846,386 @@ print(f"姓名: {name}, 年龄: {age}")
 
 # 返回结果（可选）
 result = {"status": "success", "message": f"处理完成: {name}"}`}
-                                                </pre>
-                                              </details>
-                                            </div>
-                                            <Form.Item
-                                              noStyle
-                                              shouldUpdate={(prevValues, currentValues) => {
-                                                const prevExt = prevValues.steps?.[name]?.extension;
-                                                const currentExt = currentValues.steps?.[name]?.extension;
-                                                return JSON.stringify(prevExt) !== JSON.stringify(currentExt);
-                                              }}
-                                            >
-                                              {({ getFieldValue }) => {
-                                                const extension = getFieldValue(["steps", name, "extension"]);
-                                                let scriptContent = "";
-                                                
-                                                if (extension) {
-                                                  if (typeof extension === "string") {
-                                                    try {
-                                                      const parsed = JSON.parse(extension);
-                                                      scriptContent = parsed.script || "";
-                                                    } catch {
-                                                      scriptContent = extension;
-                                                    }
-                                                  } else if (typeof extension === "object") {
-                                                    scriptContent = extension.script || "";
-                                                  }
-                                                }
-                                                
-                                                return (
-                                                  <PythonCodeEditor
-                                                    value={scriptContent}
-                                                    onChange={(code) => {
-                                                      // 更新表单值，保存为 JSON 格式
-                                                      form.setFieldValue(
-                                                        ["steps", name, "extension"],
-                                                        JSON.stringify({ script: code }, null, 2)
-                                                      );
-                                                    }}
-                                                  />
+                                          </pre>
+                                        </details>
+                                      </div>
+                                      <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prevValues, currentValues) => {
+                                          const prevExt = prevValues.steps?.[name]?.extension;
+                                          const currentExt = currentValues.steps?.[name]?.extension;
+                                          return JSON.stringify(prevExt) !== JSON.stringify(currentExt);
+                                        }}
+                                      >
+                                        {({ getFieldValue }) => {
+                                          const extension = getFieldValue(["steps", name, "extension"]);
+                                          let scriptContent = "";
+                                          
+                                          if (extension) {
+                                            if (typeof extension === "string") {
+                                              try {
+                                                const parsed = JSON.parse(extension);
+                                                scriptContent = parsed.script || "";
+                                              } catch {
+                                                scriptContent = extension;
+                                              }
+                                            } else if (typeof extension === "object") {
+                                              scriptContent = extension.script || "";
+                                            }
+                                          }
+                                          
+                                          return (
+                                            <PythonCodeEditor
+                                              value={scriptContent}
+                                              onChange={(code) => {
+                                                // 更新表单值，保存为 JSON 格式
+                                                form.setFieldValue(
+                                                  ["steps", name, "extension"],
+                                                  JSON.stringify({ script: code }, null, 2)
                                                 );
                                               }}
-                                            </Form.Item>
-                                          </div>
-                                        </Form.Item>
-                                      );
-                                    } else {
-                                      // 其他类型：显示扩展配置
-                                      return (
-                                        <Form.Item
-                                          {...restField}
-                                          name={[name, "extension"]}
-                                          label="扩展配置"
-                                          labelCol={{ span: 3 }}
-                                          wrapperCol={{ span: 21 }}
-                                          rules={[
-                                            { required: true, message: "请输入扩展配置" },
-                                            {
-                                              validator: (_, value) => {
-                                                if (!value) {
-                                                  return Promise.resolve();
-                                                }
-                                                try {
-                                                  JSON.parse(value);
-                                                  return Promise.resolve();
-                                                } catch (e) {
-                                                  return Promise.reject(new Error("请输入有效的 JSON 格式"));
-                                                }
-                                              },
-                                            },
-                                          ]}
-                                          tooltip="请输入 JSON 格式的扩展配置"
-                                          style={{ marginBottom: "8px" }}
-                                        >
-                                          <Input.TextArea
-                                            placeholder='例如: {"command": "echo hello"}'
-                                            rows={3}
-                                          />
-                                        </Form.Item>
-                                      );
-                                    }
-                                  }}
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          </div>
-                        ))}
-                        <Button
-                          type="dashed"
-                          onClick={() => {
-                            const currentSteps = form.getFieldValue("steps") || [];
-                            add({
-                              order: currentSteps.length + 1,
-                              step_type: "command",
-                              extension: "{}",
-                            });
-                          }}
-                          block
-                          icon={<PlusOutlined />}
-                        >
-                          新增步骤
-                        </Button>
-                      </>
-                    )}
-                  </Form.List>
-                </div>
-              </TabPane>
-
-              {/* Tab 4: 节点 */}
-              <TabPane tab="运行节点" key="node">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Form.Item
-                    name="node_type"
-                    label="节点类型"
-                    rules={[
-                      { required: true, message: "请选择节点类型" },
-                    ]}
-                  >
-                    <Select placeholder="请选择节点类型">
-                      <Select.Option value="local">本地节点</Select.Option>
-                      <Select.Option value="remote">远程节点</Select.Option>
-                    </Select>
-                  </Form.Item>
-                </div>
-              </TabPane>
-
-              {/* Tab 5: 定时任务 */}
-              <TabPane tab="定时任务" key="schedule">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Form.Item
-                    name="schedule_enabled"
-                    label="是否定时任务"
-                    valuePropName="checked"
-                  >
-                    <Switch checkedChildren="启用" unCheckedChildren="禁用" />
-                  </Form.Item>
-                  <Form.Item
-                    noStyle
-                    shouldUpdate={(prevValues, currentValues) =>
-                      prevValues.schedule_enabled !== currentValues.schedule_enabled
-                    }
-                  >
-                    {({ getFieldValue }) =>
-                      getFieldValue("schedule_enabled") ? (
-                        <>
-                          <Form.Item
-                            name="schedule_crontab"
-                            label="定时任务规则 (Crontab)"
-                            rules={[
-                              { required: true, message: "请输入 Crontab 表达式" },
-                            ]}
-                            extra="例如: 0 0 * * * (每天午夜执行)"
-                          >
-                            <Input placeholder="0 0 * * *" />
+                                            />
+                                          );
+                                        }}
+                                      </Form.Item>
+                                    </div>
+                                  </Form.Item>
+                                );
+                              } else {
+                                // 其他类型：显示扩展配置
+                                return (
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "extension"]}
+                                    label="扩展配置"
+                                    labelCol={{ span: 3 }}
+                                    wrapperCol={{ span: 21 }}
+                                    rules={[
+                                      { required: true, message: "请输入扩展配置" },
+                                      {
+                                        validator: (_, value) => {
+                                          if (!value) {
+                                            return Promise.resolve();
+                                          }
+                                          try {
+                                            JSON.parse(value);
+                                            return Promise.resolve();
+                                          } catch (e) {
+                                            return Promise.reject(new Error("请输入有效的 JSON 格式"));
+                                          }
+                                        },
+                                      },
+                                    ]}
+                                    tooltip="请输入 JSON 格式的扩展配置"
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input.TextArea
+                                      placeholder='例如: {"command": "echo hello"}'
+                                      rows={3}
+                                    />
+                                  </Form.Item>
+                                );
+                              }
+                            }}
                           </Form.Item>
+                        </Col>
+                      </Row>
+                    </div>
+                  ))}
+                  <Button
+                    type="dashed"
+                    onClick={() => {
+                      const currentSteps = form.getFieldValue("steps") || [];
+                      add({
+                        order: currentSteps.length + 1,
+                        step_type: "command",
+                        extension: "{}",
+                      });
+                    }}
+                    block
+                    icon={<PlusOutlined />}
+                  >
+                    新增步骤
+                  </Button>
+                </>
+              )}
+            </Form.List>
+          </div>
+        ),
+      },
+      {
+        key: "node",
+        label: "运行节点",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Form.Item
+              name="node_type"
+              label="节点类型"
+              rules={[
+                { required: true, message: "请选择节点类型" },
+              ]}
+            >
+              <Select placeholder="请选择节点类型">
+                <Select.Option value="local">本地节点</Select.Option>
+                <Select.Option value="remote">远程节点</Select.Option>
+              </Select>
+            </Form.Item>
+          </div>
+        ),
+      },
+      {
+        key: "schedule",
+        label: "定时任务",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Form.Item
+              name="schedule_enabled"
+              label="是否定时任务"
+              valuePropName="checked"
+            >
+              <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+            </Form.Item>
+            <Form.Item
+              noStyle
+              shouldUpdate={(prevValues, currentValues) =>
+                prevValues.schedule_enabled !== currentValues.schedule_enabled
+              }
+            >
+              {({ getFieldValue }) =>
+                getFieldValue("schedule_enabled") ? (
+                  <>
+                    <Form.Item
+                      name="schedule_crontab"
+                      label="定时任务规则 (Crontab)"
+                      rules={[
+                        { required: true, message: "请输入 Crontab 表达式" },
+                      ]}
+                      extra="例如: 0 0 * * * (每天午夜执行)"
+                    >
+                      <Input placeholder="0 0 * * *" />
+                    </Form.Item>
+                    <Form.Item
+                      name="schedule_timezone"
+                      label="时区"
+                      initialValue="UTC"
+                    >
+                      <Select>
+                        <Select.Option value="UTC">UTC</Select.Option>
+                        <Select.Option value="Asia/Shanghai">Asia/Shanghai</Select.Option>
+                        <Select.Option value="America/New_York">America/New_York</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </>
+                ) : null
+              }
+            </Form.Item>
+          </div>
+        ),
+      },
+      {
+        key: "notifications",
+        label: "消息通知",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Form.List name="notifications">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...restField }) => (
+                    <div
+                      key={key}
+                      style={{
+                        border: "1px solid #d9d9d9",
+                        borderRadius: "4px",
+                        padding: "12px",
+                        marginBottom: "12px",
+                        backgroundColor: "#fafafa",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <Typography.Text strong>
+                          通知规则 {name + 1}
+                        </Typography.Text>
+                        <Button
+                          type="text"
+                          danger
+                          size="small"
+                          icon={<DeleteOutlined />}
+                          onClick={() => remove(name)}
+                        >
+                          移除
+                        </Button>
+                      </div>
+                      <Row gutter={[16, 8]}>
+                        <Col span={12}>
                           <Form.Item
-                            name="schedule_timezone"
-                            label="时区"
-                            initialValue="UTC"
+                            {...restField}
+                            name={[name, "trigger"]}
+                            label="触发条件"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            rules={[
+                              { required: true, message: "请选择触发条件" },
+                            ]}
+                            style={{ marginBottom: "8px" }}
                           >
-                            <Select>
-                              <Select.Option value="UTC">UTC</Select.Option>
-                              <Select.Option value="Asia/Shanghai">Asia/Shanghai</Select.Option>
-                              <Select.Option value="America/New_York">America/New_York</Select.Option>
+                            <Select placeholder="请选择触发条件">
+                              <Select.Option value="on_start">任务开始</Select.Option>
+                              <Select.Option value="on_success">任务成功</Select.Option>
+                              <Select.Option value="on_failure">任务失败</Select.Option>
+                              <Select.Option value="on_retryable_fail">可重试失败</Select.Option>
+                              <Select.Option value="average_duration_exceeded">平均时长超限</Select.Option>
                             </Select>
                           </Form.Item>
-                        </>
-                      ) : null
-                    }
-                  </Form.Item>
-                </div>
-              </TabPane>
-
-              {/* Tab 6: 通知 */}
-              <TabPane tab="消息通知" key="notifications">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Form.List name="notifications">
-                    {(fields, { add, remove }) => (
-                      <>
-                        {fields.map(({ key, name, ...restField }) => (
-                          <div
-                            key={key}
-                            style={{
-                              border: "1px solid #d9d9d9",
-                              borderRadius: "4px",
-                              padding: "12px",
-                              marginBottom: "12px",
-                              backgroundColor: "#fafafa",
-                            }}
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "notification_type"]}
+                            label="通知类型"
+                            labelCol={{ span: 6 }}
+                            wrapperCol={{ span: 18 }}
+                            rules={[
+                              { required: true, message: "请选择通知类型" },
+                            ]}
+                            style={{ marginBottom: "8px" }}
                           >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: "12px",
-                              }}
-                            >
-                              <Typography.Text strong>
-                                通知规则 {name + 1}
-                              </Typography.Text>
-                              <Button
-                                type="text"
-                                danger
-                                size="small"
-                                icon={<DeleteOutlined />}
-                                onClick={() => remove(name)}
-                              >
-                                移除
-                              </Button>
-                            </div>
-                            <Row gutter={[16, 8]}>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "trigger"]}
-                                  label="触发条件"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  rules={[
-                                    { required: true, message: "请选择触发条件" },
-                                  ]}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Select placeholder="请选择触发条件">
-                                    <Select.Option value="on_start">任务开始</Select.Option>
-                                    <Select.Option value="on_success">任务成功</Select.Option>
-                                    <Select.Option value="on_failure">任务失败</Select.Option>
-                                    <Select.Option value="on_retryable_fail">可重试失败</Select.Option>
-                                    <Select.Option value="average_duration_exceeded">平均时长超限</Select.Option>
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                              <Col span={12}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "notification_type"]}
-                                  label="通知类型"
-                                  labelCol={{ span: 6 }}
-                                  wrapperCol={{ span: 18 }}
-                                  rules={[
-                                    { required: true, message: "请选择通知类型" },
-                                  ]}
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Select placeholder="请选择通知类型">
-                                    <Select.Option value="webhook">Webhook</Select.Option>
-                                    <Select.Option value="dingtalk_webhook">钉钉 Webhook</Select.Option>
-                                  </Select>
-                                </Form.Item>
-                              </Col>
-                              <Col span={24}>
-                                <Form.Item
-                                  {...restField}
-                                  name={[name, "extensions"]}
-                                  label="扩展配置"
-                                  labelCol={{ span: 3 }}
-                                  wrapperCol={{ span: 21 }}
-                                  rules={[
-                                    { required: true, message: "请输入扩展配置" },
-                                    {
-                                      validator: (_, value) => {
-                                        if (!value) {
-                                          return Promise.resolve();
-                                        }
-                                        try {
-                                          JSON.parse(value);
-                                          return Promise.resolve();
-                                        } catch (e) {
-                                          return Promise.reject(new Error("请输入有效的 JSON 格式"));
-                                        }
-                                      },
-                                    },
-                                  ]}
-                                  tooltip="请输入 JSON 格式的扩展配置"
-                                  style={{ marginBottom: "8px" }}
-                                >
-                                  <Input.TextArea
-                                    placeholder='例如: {"url": "https://example.com/webhook"}'
-                                    rows={3}
-                                  />
-                                </Form.Item>
-                              </Col>
-                            </Row>
-                          </div>
-                        ))}
-                        <Button
-                          type="dashed"
-                          onClick={() => add()}
-                          block
-                          icon={<PlusOutlined />}
-                        >
-                          新增通知规则
-                        </Button>
-                      </>
-                    )}
-                  </Form.List>
-                </div>
-              </TabPane>
+                            <Select placeholder="请选择通知类型">
+                              <Select.Option value="webhook">Webhook</Select.Option>
+                              <Select.Option value="dingtalk_webhook">钉钉 Webhook</Select.Option>
+                            </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={24}>
+                          <Form.Item
+                            {...restField}
+                            name={[name, "extensions"]}
+                            label="扩展配置"
+                            labelCol={{ span: 3 }}
+                            wrapperCol={{ span: 21 }}
+                            rules={[
+                              { required: true, message: "请输入扩展配置" },
+                              {
+                                validator: (_, value) => {
+                                  if (!value) {
+                                    return Promise.resolve();
+                                  }
+                                  try {
+                                    JSON.parse(value);
+                                    return Promise.resolve();
+                                  } catch (e) {
+                                    return Promise.reject(new Error("请输入有效的 JSON 格式"));
+                                  }
+                                },
+                              },
+                            ]}
+                            tooltip="请输入 JSON 格式的扩展配置"
+                            style={{ marginBottom: "8px" }}
+                          >
+                            <Input.TextArea
+                              placeholder='例如: {"url": "https://example.com/webhook"}'
+                              rows={3}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </div>
+                  ))}
+                  <Button
+                    type="dashed"
+                    onClick={() => add()}
+                    block
+                    icon={<PlusOutlined />}
+                  >
+                    新增通知规则
+                  </Button>
+                </>
+              )}
+            </Form.List>
+          </div>
+        ),
+      },
+      {
+        key: "others",
+        label: "其他配置",
+        children: (
+          <div style={{ maxWidth: 800, padding: "20px 0" }}>
+            <Form.Item
+              name="timeout"
+              label="超时时间（分钟）"
+              extra="任务执行超时时间，超过此时间将自动终止"
+            >
+              <InputNumber
+                min={1}
+                placeholder="请输入超时时间（分钟）"
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="retry"
+              label="重试次数"
+              initialValue={0}
+              extra="任务失败后自动重试的次数"
+            >
+              <InputNumber
+                min={0}
+                placeholder="请输入重试次数"
+                style={{ width: "100%" }}
+              />
+            </Form.Item>
+          </div>
+        ),
+      },
+    ];
+  }, [form, handleTestScript]);
 
-              {/* Tab 7: 其他 */}
-              <TabPane tab="其他配置" key="others">
-                <div style={{ maxWidth: 800, padding: "20px 0" }}>
-                  <Form.Item
-                    name="timeout"
-                    label="超时时间（分钟）"
-                    extra="任务执行超时时间，超过此时间将自动终止"
-                  >
-                    <InputNumber
-                      min={1}
-                      placeholder="请输入超时时间（分钟）"
-                      style={{ width: "100%" }}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="retry"
-                    label="重试次数"
-                    initialValue={0}
-                    extra="任务失败后自动重试的次数"
-                  >
-                    <InputNumber
-                      min={0}
-                      placeholder="请输入重试次数"
-                      style={{ width: "100%" }}
-                    />
-                  </Form.Item>
-                </div>
-              </TabPane>
-            </Tabs>
+  return (
+    <Card>
+      <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+        {/* 头部 */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Space>
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={handleCancel}
+            >
+              返回
+            </Button>
+            <Title level={3} style={{ margin: 0 }}>
+              {isEditMode ? "编辑任务" : "新建任务"}
+            </Title>
+          </Space>
+        </div>
+
+        {/* 表单 */}
+        <Spin spinning={loadingJob}>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+            initialValues={{
+              retry: 0,
+              node_type: "local",
+              schedule_enabled: false,
+              schedule_timezone: "UTC",
+              options: [],
+              steps: [],
+              notifications: [],
+            }}
+          >
+            <Tabs defaultActiveKey="basic" type="card" items={tabItems} />
 
             <Divider />
 

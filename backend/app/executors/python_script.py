@@ -4,6 +4,7 @@ import os
 import json
 from typing import Dict, Any, Tuple
 from app.executors import StepExecutor
+from app.main import logger
 
 
 class PythonScriptExecutor(StepExecutor):
@@ -20,30 +21,32 @@ class PythonScriptExecutor(StepExecutor):
         
         extension 配置示例:
         {
-            "script": "result = {}\nresult['text'] = 'Hello World'\nprint('执行完成')"
+            "script": "def execute(args: dict) -> tuple:\n    a = args.get('a')\n    b = args.get('b')\n    return (str(int(a) + int(b)), [{'sum': int(a) + int(b)}])"
         }
         
         脚本编写规范:
-        - 脚本必须显式设置 result = {} 对象（虽然会在执行前自动注入，但建议显式声明）
-        - 脚本可以通过 result['key'] = value 的方式设置结果
-        - 脚本中的 print() 输出会追加到 result['text'] 中
-        - 脚本执行完成后，result 对象会被序列化并返回
+        - 用户只需要实现一个 execute 函数
+        - 必须返回元组: (result: str, dataset: list)
+        - result: 字符串类型的结果文本
+        - dataset: JSON 数组（list），可选，用于返回结构化数据
         
         使用示例:
         ```python
-        # result 和 args 会在执行前自动注入
-        result = {}  # 显式声明（可选，但推荐）
+        def execute(args: dict) -> tuple:
+            a = args.get("a")
+            b = args.get("b")
+            result_text = str(int(a) + int(b))
+            dataset = [{"a": a, "b": b, "sum": int(a) + int(b)}]
+            return (result_text, dataset)
+        ```
         
-        # 使用 args 获取输入参数
-        name = args.get('name', '')
-        age = args.get('age', 0)
-        
-        # 设置结果
-        result['text'] = f'姓名: {name}, 年龄: {age}'
-        result['data'] = {'processed': True}
-        
-        # print 输出也会追加到 result['text']
-        print('处理完成')
+        只返回 result，dataset 为 None:
+        ```python
+        def execute(args: dict) -> tuple:
+            a = args.get("a")
+            b = args.get("b")
+            result_text = str(int(a) + int(b))
+            return (result_text, None)  # 或 return (result_text, [])
         ```
         """
         extension = context.get("step_extension", {})
@@ -56,24 +59,68 @@ class PythonScriptExecutor(StepExecutor):
         initial_result = result.copy()
         
         # 构建完整的脚本代码
-        # 1. 注入 args 和 result
-        # 2. 执行用户脚本
-        # 3. 在脚本末尾输出 result 的 JSON（使用特殊标记）
+        # 1. 导入必要的模块
+        # 2. 注入 args 和 initial_result
+        # 3. 执行用户脚本（定义 execute 函数）
+        # 4. 调用 execute 函数并处理返回值
+        initial_result_json = json.dumps(initial_result, ensure_ascii=False)
+        args_json = json.dumps(args, ensure_ascii=False)
+        
         script_parts = [
             "import json",
             "import sys",
             "",
-            f"# 注入的变量",
-            f"args = {repr(args)}",
-            f"result = {repr(initial_result)}",
+            "# 注入的参数和初始结果",
+            f"args = json.loads({repr(args_json)})",
+            f"initial_result = json.loads({repr(initial_result_json)})",
             "",
-            "# 用户脚本开始",
+            "# 用户定义的 execute 函数",
             script,
             "",
-            "# 输出 result 对象（使用特殊标记）",
-            "print('__RESULT_START__')",
-            "print(json.dumps(result, ensure_ascii=False))",
-            "print('__RESULT_END__')",
+            "# 调用 execute 函数并处理返回值",
+            "try:",
+            "    execute_result = execute(args)",
+            "    ",
+            "    # 验证返回值必须是元组",
+            "    if not isinstance(execute_result, tuple):",
+            "        raise TypeError(f'execute 函数必须返回元组 (result: str, dataset: list)，但返回了 {type(execute_result).__name__}')",
+            "    ",
+            "    # 处理元组返回值 (result: str, dataset: list) 或 (result: str,)",
+            "    if len(execute_result) == 0:",
+            "        result_text = ''",
+            "        result_dataset = None",
+            "    elif len(execute_result) == 1:",
+            "        result_text = str(execute_result[0])",
+            "        result_dataset = None",
+            "    else:",
+            "        result_text = str(execute_result[0])",
+            "        result_dataset = execute_result[1] if execute_result[1] is not None else None",
+            "    ",
+            "    # 确保 dataset 是列表或 None",
+            "    if result_dataset is not None and not isinstance(result_dataset, list):",
+            "        raise TypeError(f'dataset 必须是列表类型，但得到了 {type(result_dataset).__name__}')",
+            "    ",
+            "    # 构建结果字典",
+            "    result_dict = {",
+            "        'text': result_text,",
+            "        'dataset': result_dataset",
+            "    }",
+            "    ",
+            "    # 合并到初始 result",
+            "    result = {**initial_result, **result_dict}",
+            "    ",
+            "    # 输出 result 对象（使用特殊标记）",
+            "    print('__RESULT_START__')",
+            "    print(json.dumps(result, ensure_ascii=False))",
+            "    print('__RESULT_END__')",
+            "except Exception as e:",
+            "    import traceback",
+            "    error_msg = f'执行 execute 函数时出错: {str(e)}\\n{traceback.format_exc()}'",
+            "    result = {**initial_result, 'text': error_msg, 'dataset': None}",
+            "    print('__RESULT_START__')",
+            "    print(json.dumps(result, ensure_ascii=False))",
+            "    print('__RESULT_END__')",
+            "    sys.exit(1)",
         ]
         
         final_script = "\n".join(script_parts)
@@ -111,12 +158,20 @@ class PythonScriptExecutor(StepExecutor):
                         try:
                             # 解析 result JSON 并更新 result 对象
                             script_result = json.loads(result_part)
+                            # 更新 result 对象
                             result.update(script_result)
+                            # 如果 result['text'] 为空字符串或不存在，但有普通输出，将普通输出作为 text
+                            if (not result.get("text") or result.get("text") == "") and normal_output:
+                                result["text"] = normal_output
                         except json.JSONDecodeError as e:
-                            raise RuntimeError(f"无法解析脚本返回的 result JSON: {str(e)}")
+                            raise RuntimeError(f"无法解析脚本返回的 result JSON: {str(e)}\n原始输出: {output}\n结果部分: {result_part}")
+                    else:
+                        # 如果只有普通输出，将其作为 text
+                        if normal_output:
+                            result["text"] = normal_output
                     
-                    # 将普通输出追加到 result.text
-                    if normal_output:
+                    # 将普通输出追加到 result.text（如果 text 已有内容）
+                    if normal_output and result.get("text") and normal_output not in result.get("text", ""):
                         current_text = result.get("text", "")
                         result["text"] = f"{current_text}\n{normal_output}".strip() if current_text else normal_output
                 else:
@@ -133,8 +188,10 @@ class PythonScriptExecutor(StepExecutor):
                 raise RuntimeError(f"脚本执行失败，返回码: {process.returncode}\n{error}")
             
         except subprocess.TimeoutExpired:
+            logger.error(f"脚本执行超时: script_path={script_path}")
             raise TimeoutError(f"脚本执行超时")
         except Exception as e:
+            logger.error(f"脚本执行出错: script_path={script_path}, error={str(e)}", exc_info=True)
             raise RuntimeError(f"脚本执行出错: {str(e)}")
         finally:
             # 清理临时文件

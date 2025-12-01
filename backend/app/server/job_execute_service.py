@@ -1,6 +1,7 @@
 from typing import Dict, Any, Tuple
 from app.models import Job, Workflow
 from app.executors.factory import ExecutorFactory
+from app.main import logger
 
 
 class JobExecuteService:
@@ -77,6 +78,8 @@ class JobExecuteService:
             
         except Exception as e:
             error_message = str(e)
+            logger.error(f"任务执行失败: job_id={job.id}, error={error_message}", exc_info=True)
+            
             html = JobExecuteService._generate_error_html(error_message)
             return {
                 "output": html,

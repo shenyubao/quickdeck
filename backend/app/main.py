@@ -33,7 +33,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         
         log_message = f"收到请求: {method} {path} - 客户端IP: {client_ip}"
         logger.info(log_message)
-        print(log_message)  # 同时输出到控制台
         
         # 处理请求
         try:
@@ -59,7 +58,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 f"处理时间: {process_time:.3f}s"
             )
             logger.error(log_message)
-            print(log_message)  # 同时输出到控制台
             raise
 
 

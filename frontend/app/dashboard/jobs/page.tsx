@@ -45,26 +45,26 @@ export default function NewJobPage() {
     loadProjects();
   }, []);
 
-  // 如果是编辑模式，加载任务详情
+  // 如果是编辑模式，加载工具详情
   useEffect(() => {
     console.log("useEffect 执行，jobId:", jobId);
     const loadJobDetail = async () => {
       console.log("loadJobDetail 开始执行，jobId:", jobId);
       if (!jobId) {
-        console.log("jobId 为空，不加载任务详情");
+        console.log("jobId 为空，不加载工具详情");
         setJobDetail(null);
         return;
       }
       
       try {
-        console.log("开始加载任务详情，jobId:", jobId);
+        console.log("开始加载工具详情，jobId:", jobId);
         setLoadingJobDetail(true);
         const detail = await jobApi.getDetailById(parseInt(jobId));
-        console.log("任务详情加载完成:", detail);
+        console.log("工具详情加载完成:", detail);
         console.log("owner 信息:", detail?.owner);
         setJobDetail(detail);
       } catch (error) {
-        console.error("加载任务详情失败:", error);
+        console.error("加载工具详情失败:", error);
         setJobDetail(null);
       } finally {
         setLoadingJobDetail(false);
@@ -81,7 +81,7 @@ export default function NewJobPage() {
       <Card>
         <div style={{ textAlign: "center", padding: "50px 0" }}>
           <Title level={4}>请先创建项目</Title>
-          <p>在创建任务之前，您需要先创建一个项目。</p>
+          <p>在创建工具之前，您需要先创建一个项目。</p>
           <Button
             type="primary"
             onClick={() => router.push("/dashboard/projects")}
@@ -99,9 +99,9 @@ export default function NewJobPage() {
       <Card>
         <div style={{ textAlign: "center", padding: "50px 0" }}>
           <Title level={4}>请先选择项目</Title>
-          <p>请在顶部导航栏选择一个项目，然后再创建任务。</p>
+          <p>请在顶部导航栏选择一个项目，然后再创建工具。</p>
           <Button onClick={() => router.push("/dashboard")}>
-            返回任务清单
+            返回工具清单
           </Button>
         </div>
       </Card>
@@ -120,7 +120,7 @@ export default function NewJobPage() {
       }}>
         <div>
           <Title level={3} style={{ margin: 0, marginBottom: "8px" }}>
-            {jobId ? "编辑任务" : "新建任务"}
+            {jobId ? "编辑工具" : "新建工具"}
           </Title>
           {/* 显示负责人信息 */}
           {(() => {

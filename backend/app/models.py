@@ -67,7 +67,7 @@ class NotificationTypeEnum(str, enum.Enum):
 class ExecutionTypeEnum(str, enum.Enum):
     """执行方式类型"""
     MANUAL = "manual"  # 手动执行
-    SCHEDULED = "scheduled"  # 定时任务
+    SCHEDULED = "scheduled"  # 定时工具
 
 
 class ExecutionStatusEnum(str, enum.Enum):
@@ -120,7 +120,7 @@ class Project(BaseModel):
     )
 
 
-# 任务可见用户关联表
+# 工具可见用户关联表
 job_visible_users = Table(
     "job_visible_users",
     Base.metadata,
@@ -129,14 +129,14 @@ job_visible_users = Table(
 )
 
 
-# 任务模型
+# 工具模型
 class Job(BaseModel):
     __tablename__ = "jobs"
     
-    name = Column(String, nullable=False, index=True, comment="任务名称")
-    path = Column(String, nullable=False, index=True, comment="任务路径")
-    description = Column(Text, comment="任务描述")
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="任务Owner")
+    name = Column(String, nullable=False, index=True, comment="工具名称")
+    path = Column(String, nullable=False, index=True, comment="工具路径")
+    description = Column(Text, comment="工具描述")
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, comment="工具Owner")
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, comment="所属项目")
     
     # 关系
@@ -147,7 +147,7 @@ class Job(BaseModel):
     
     # 索引
     __table_args__ = (
-        {"comment": "任务表"}
+        {"comment": "工具表"}
     )
 
 
@@ -156,7 +156,7 @@ class Workflow(BaseModel):
     __tablename__ = "workflows"
     
     name = Column(String, nullable=False, comment="工作流名称")
-    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, unique=True, comment="所属任务")
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, unique=True, comment="所属工具")
     timeout = Column(Integer, comment="超时时间（秒）")
     retry = Column(Integer, default=0, comment="重试次数")
     
@@ -218,9 +218,9 @@ class Step(BaseModel):
 class JobExecution(BaseModel):
     __tablename__ = "job_executions"
     
-    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True, comment="所属任务")
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True, comment="所属工具")
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="执行人")
-    execution_type = Column(String, nullable=False, default=ExecutionTypeEnum.MANUAL.value, comment="执行方式（手动/定时任务）")
+    execution_type = Column(String, nullable=False, default=ExecutionTypeEnum.MANUAL.value, comment="执行方式（手动/定时工具）")
     status = Column(String, nullable=False, comment="执行状态（成功/失败）")
     args = Column(JSON, comment="入参（JSON格式）")
     output_text = Column(Text, comment="返回的text")
@@ -233,7 +233,7 @@ class JobExecution(BaseModel):
     
     # 索引
     __table_args__ = (
-        {"comment": "任务执行记录表"}
+        {"comment": "工具执行记录表"}
     )
 
 

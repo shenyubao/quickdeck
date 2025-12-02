@@ -67,15 +67,15 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('name', sa.String(), nullable=False, comment='任务名称'),
-        sa.Column('path', sa.String(), nullable=False, comment='任务路径'),
-        sa.Column('description', sa.Text(), nullable=True, comment='任务描述'),
-        sa.Column('owner_id', sa.Integer(), nullable=False, comment='任务Owner'),
+        sa.Column('name', sa.String(), nullable=False, comment='工具名称'),
+        sa.Column('path', sa.String(), nullable=False, comment='工具路径'),
+        sa.Column('description', sa.Text(), nullable=True, comment='工具描述'),
+        sa.Column('owner_id', sa.Integer(), nullable=False, comment='工具Owner'),
         sa.Column('project_id', sa.Integer(), nullable=False, comment='所属项目'),
         sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
-        comment='任务表'
+        comment='工具表'
     )
     op.create_index(op.f('ix_jobs_id'), 'jobs', ['id'], unique=False)
     op.create_index(op.f('ix_jobs_name'), 'jobs', ['name'], unique=False)
@@ -98,7 +98,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('name', sa.String(), nullable=False, comment='工作流名称'),
-        sa.Column('job_id', sa.Integer(), nullable=False, comment='所属任务'),
+        sa.Column('job_id', sa.Integer(), nullable=False, comment='所属工具'),
         sa.Column('timeout', sa.Integer(), nullable=True, comment='超时时间（秒）'),
         sa.Column('retry', sa.Integer(), nullable=True, server_default=sa.text('0'), comment='重试次数'),
         sa.Column('schedule_enabled', sa.Boolean(), nullable=True, server_default=sa.text('false'), comment='是否启用调度'),

@@ -198,8 +198,8 @@ export interface WorkflowCreate {
   timeout?: number; // 超时时间（分钟）
   retry?: number; // 重试次数
   node_type?: "local" | "remote";
-  schedule_enabled?: boolean; // 是否定时任务
-  schedule_crontab?: string; // 定时任务规则
+  schedule_enabled?: boolean; // 是否定时工具
+  schedule_crontab?: string; // 定时工具规则
   schedule_timezone?: string; // 时区
   options?: OptionCreate[]; // 参数列表
   steps?: StepCreate[]; // 步骤列表
@@ -256,7 +256,7 @@ export interface JobDetail {
 
 export const jobApi = {
   /**
-   * 获取任务列表
+   * 获取工具列表
    */
   async getAll(projectId?: number): Promise<Job[]> {
     try {
@@ -289,7 +289,7 @@ export const jobApi = {
   },
 
   /**
-   * 获取单个任务
+   * 获取单个工具
    */
   async getById(id: number): Promise<Job> {
     const headers = await getAuthHeaders();
@@ -302,7 +302,7 @@ export const jobApi = {
   },
 
   /**
-   * 获取任务详情（包含工作流信息）
+   * 获取工具详情（包含工作流信息）
    */
   async getDetailById(id: number): Promise<JobDetail> {
     const headers = await getAuthHeaders();
@@ -315,7 +315,7 @@ export const jobApi = {
   },
 
   /**
-   * 创建任务
+   * 创建工具
    */
   async create(data: JobCreate): Promise<Job> {
     const headers = await getAuthHeaders();
@@ -329,7 +329,7 @@ export const jobApi = {
   },
 
   /**
-   * 更新任务
+   * 更新工具
    */
   async update(id: number, data: JobUpdate): Promise<Job> {
     const headers = await getAuthHeaders();
@@ -343,7 +343,7 @@ export const jobApi = {
   },
 
   /**
-   * 删除任务
+   * 删除工具
    */
   async delete(id: number): Promise<void> {
     const headers = await getAuthHeaders();
@@ -356,7 +356,7 @@ export const jobApi = {
   },
 
   /**
-   * 运行任务
+   * 运行工具
    */
   async run(id: number, args?: Record<string, any>): Promise<{ output: string; result: any; error?: string }> {
     const headers = await getAuthHeaders();
@@ -646,6 +646,135 @@ export const credentialApi = {
     const headers = await getAuthHeaders();
     const apiUrl = getApiUrlValue();
     const response = await fetch(`${apiUrl}/api/credentials/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    return handleResponse<void>(response);
+  },
+};
+
+// 用户相关类型
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  nickname?: string;
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface UserCreate {
+  username: string;
+  email?: string;
+  nickname?: string;
+  password: string;
+}
+
+export interface UserUpdate {
+  username?: string;
+  email?: string;
+  nickname?: string;
+  password?: string;
+  is_active?: boolean;
+  is_admin?: boolean;
+}
+
+/**
+ * 文件上传相关 API
+ */
+export const uploadApi = {
+  /**
+   * 上传文件
+   */
+  async upload(file: File): Promise<{ path: string; name: string; size: number }> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    
+    // 文件上传需要使用 FormData，不能使用 JSON
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    // 移除 Content-Type，让浏览器自动设置（包含 boundary）
+    const uploadHeaders: HeadersInit = {};
+    const session = await getSession();
+    const extendedSession = session as ExtendedSession | null;
+    if (extendedSession?.accessToken) {
+      uploadHeaders["Authorization"] = `Bearer ${extendedSession.accessToken}`;
+    }
+    
+    const response = await fetch(`${apiUrl}/api/upload`, {
+      method: "POST",
+      headers: uploadHeaders,
+      body: formData,
+    });
+    return handleResponse<{ path: string; name: string; size: number }>(response);
+  },
+};
+
+export const userApi = {
+  /**
+   * 获取所有用户
+   */
+  async getAll(): Promise<User[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/users`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<User[]>(response);
+  },
+
+  /**
+   * 获取单个用户
+   */
+  async getById(id: number): Promise<User> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/users/${id}`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<User>(response);
+  },
+
+  /**
+   * 创建用户
+   */
+  async create(data: UserCreate): Promise<User> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<User>(response);
+  },
+
+  /**
+   * 更新用户
+   */
+  async update(id: number, data: UserUpdate): Promise<User> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/users/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<User>(response);
+  },
+
+  /**
+   * 删除用户
+   */
+  async delete(id: number): Promise<void> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/users/${id}`, {
       method: "DELETE",
       headers,
     });

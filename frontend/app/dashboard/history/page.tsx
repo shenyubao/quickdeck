@@ -57,14 +57,14 @@ export default function HistoryPage() {
   const [selectedExecution, setSelectedExecution] = useState<JobExecution | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
-  // 加载任务列表
+  // 加载工具列表
   useEffect(() => {
     const loadJobs = async () => {
       try {
         const data = await jobApi.getAll();
         setJobs(data);
       } catch (error) {
-        console.error("加载任务列表失败:", error);
+        console.error("加载工具列表失败:", error);
       }
     };
     loadJobs();
@@ -136,7 +136,7 @@ export default function HistoryPage() {
       sorter: true,
     },
     {
-      title: "任务名称",
+      title: "工具名称",
       dataIndex: "job_name",
       key: "job_name",
       width: 200,
@@ -146,7 +146,7 @@ export default function HistoryPage() {
           onClick={() => handleViewDetail(record)}
           style={{ padding: 0 }}
         >
-          {text || `任务 #${record.job_id}`}
+          {text || `工具 #${record.job_id}`}
         </Button>
       ),
     },
@@ -169,7 +169,7 @@ export default function HistoryPage() {
       width: 100,
       render: (type: string) => (
         <Tag color={type === "manual" ? "blue" : "purple"}>
-          {type === "manual" ? "手动" : "定时任务"}
+          {type === "manual" ? "手动" : "定时工具"}
         </Tag>
       ),
     },
@@ -223,10 +223,10 @@ export default function HistoryPage() {
       <Card>
         {/* 筛选区域 */}
         <Space style={{ marginBottom: 16, flexWrap: "wrap" }}>
-          <span>任务：</span>
+          <span>工具：</span>
           <Select
             style={{ width: 200 }}
-            placeholder="全部任务"
+            placeholder="全部工具"
             allowClear
             value={filters.job_id}
             onChange={(value) => handleFilterChange("job_id", value)}
@@ -259,7 +259,7 @@ export default function HistoryPage() {
             onChange={(value) => handleFilterChange("execution_type", value)}
           >
             <Option value="manual">手动</Option>
-            <Option value="scheduled">定时任务</Option>
+            <Option value="scheduled">定时工具</Option>
           </Select>
 
           <Button
@@ -315,8 +315,8 @@ export default function HistoryPage() {
               <Descriptions.Item label="执行时间">
                 {formatDateTime(selectedExecution.executed_at)}
               </Descriptions.Item>
-              <Descriptions.Item label="任务名称">
-                {selectedExecution.job_name || `任务 #${selectedExecution.job_id}`}
+              <Descriptions.Item label="工具名称">
+                {selectedExecution.job_name || `工具 #${selectedExecution.job_id}`}
               </Descriptions.Item>
               <Descriptions.Item label="执行人">
                 {selectedExecution.user_nickname || selectedExecution.user_username || `用户 #${selectedExecution.user_id}`}

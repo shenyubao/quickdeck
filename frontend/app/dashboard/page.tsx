@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Layout,
   Typography,
@@ -48,6 +49,7 @@ interface TreeNode extends TreeDataNode {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { data: session } = useSession();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +141,7 @@ export default function Dashboard() {
   // 监听项目变化事件
   useEffect(() => {
     const handleStorageChange = () => {
-      // 当 localStorage 中的项目变化时，重新加载任务
+      // 当 localStorage 中的项目变化时，重新加载工具
       if (currentProject) {
         loadJobs();
       }
@@ -166,7 +168,7 @@ export default function Dashboard() {
     loadProjects();
   }, []);
 
-  // 加载任务列表
+  // 加载工具列表
   useEffect(() => {
     if (currentProject) {
       loadJobs();
@@ -187,7 +189,7 @@ export default function Dashboard() {
       if (error instanceof Error && error.message.includes("认证失败")) {
         return;
       }
-      message.error(error instanceof Error ? error.message : "加载任务列表失败");
+      message.error(error instanceof Error ? error.message : "加载工具列表失败");
     } finally {
       setLoading(false);
     }
@@ -238,7 +240,7 @@ export default function Dashboard() {
         }
       });
 
-      // 添加任务节点
+      // 添加工具节点
       const jobNode: TreeNode = {
         key: `job-${job.id}`,
         title: (
@@ -269,11 +271,11 @@ export default function Dashboard() {
   const handleSelect = async (selectedKeys: React.Key[], info: any) => {
     const node = info.node as TreeNode;
     if (node.job) {
-      // 点击任务节点
+      // 点击工具节点
       setSelectedJob(node.job);
       setSelectedPath(null);
       setJobsInSelectedPath([]);
-      // 获取任务详情（包含 workflow）
+      // 获取工具详情（包含 workflow）
       try {
         setLoadingDetail(true);
         const detail = await jobApi.getDetailById(node.job.id);
@@ -320,26 +322,26 @@ export default function Dashboard() {
           }
         }
       } catch (error) {
-        message.error(error instanceof Error ? error.message : "获取任务详情失败");
+        message.error(error instanceof Error ? error.message : "获取工具详情失败");
         setJobDetail(null);
       } finally {
         setLoadingDetail(false);
       }
     } else {
-      // 点击路径节点 - 显示路径信息和该路径下的所有任务
+      // 点击路径节点 - 显示路径信息和该路径下的所有工具
       setSelectedJob(null);
       setJobDetail(null);
       runForm.resetFields();
       
-      // 收集该路径下的所有任务
+      // 收集该路径下的所有工具
       const pathKey = node.key as string;
       const pathPrefix = pathKey.replace("path-", "");
       setSelectedPath(pathPrefix);
       
-      // 获取该路径及其子路径下的所有任务
+      // 获取该路径及其子路径下的所有工具
       const jobsInPath = jobs.filter((job) => {
         const jobPath = job.path.startsWith("/") ? job.path.slice(1) : job.path;
-        // 匹配路径前缀，包括直接在该路径下的任务
+        // 匹配路径前缀，包括直接在该路径下的工具
         return jobPath === pathPrefix || jobPath.startsWith(pathPrefix + "/");
       });
       setJobsInSelectedPath(jobsInPath);
@@ -415,7 +417,7 @@ export default function Dashboard() {
     };
   }, [isResizing]);
 
-  // 删除任务
+  // 删除工具
   const handleDeleteJob = async () => {
     if (!selectedJob) return;
     try {
@@ -428,12 +430,12 @@ export default function Dashboard() {
     }
   };
 
-  // 任务操作菜单
+  // 工具操作菜单
   const jobMenuItems: MenuProps["items"] = selectedJob
     ? [
         {
           key: "edit",
-          label: "编辑此任务...",
+          label: "编辑此工具...",
           icon: <EditOutlined />,
           onClick: () => {
             router.push(`/dashboard/jobs?id=${selectedJob.id}`);
@@ -441,7 +443,7 @@ export default function Dashboard() {
         },
         {
           key: "duplicate",
-          label: "复制此任务...",
+          label: "复制此工具...",
           icon: <CopyOutlined />,
           onClick: async () => {
             if (!selectedJob || !currentProject) return;
@@ -452,7 +454,7 @@ export default function Dashboard() {
                 description: selectedJob.description,
                 project_id: currentProject.id,
               });
-              message.success("任务复制成功");
+              message.success("工具复制成功");
               loadJobs();
             } catch (error) {
               message.error(error instanceof Error ? error.message : "复制失败");
@@ -464,12 +466,12 @@ export default function Dashboard() {
         },
         {
           key: "delete",
-          label: "删除此任务",
+          label: "删除此工具",
           icon: <DeleteOutlined />,
           danger: true,
           onClick: () => {
             Modal.confirm({
-              title: "确定要删除这个任务吗？",
+              title: "确定要删除这个工具吗？",
               content: "删除后无法恢复",
               okText: "确定",
               cancelText: "取消",
@@ -480,7 +482,7 @@ export default function Dashboard() {
       ]
     : [];
 
-  // 保存任务
+  // 保存工具
   const handleSaveJob = async () => {
     try {
       const values = await form.validateFields();
@@ -511,7 +513,7 @@ export default function Dashboard() {
     }
   };
 
-  // 运行任务
+  // 运行工具
   const handleRunJob = async () => {
     if (!selectedJob || !jobDetail) return;
     
@@ -542,7 +544,7 @@ export default function Dashboard() {
       setJobResult(null);
       setJobLogs("");
 
-      // 调用运行任务的 API
+      // 调用运行工具的 API
       const result = await jobApi.run(selectedJob.id, Object.keys(args).length > 0 ? args : undefined);
       
       // 显示结果
@@ -566,7 +568,7 @@ export default function Dashboard() {
         }
       }
       
-      message.success("任务运行完成");
+      message.success("工具运行完成");
     } catch (error) {
       if (error instanceof Error && error.message.includes("验证")) {
         return;
@@ -577,6 +579,40 @@ export default function Dashboard() {
       setJobResultHtml("");
     } finally {
       setRunning(false);
+    }
+  };
+
+  // 自定义上传函数
+  const handleUpload = async (options: any) => {
+    const { onSuccess, onError, file, onProgress } = options;
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const accessToken = (session as any)?.accessToken;
+      if (!accessToken) {
+        throw new Error('未找到认证令牌');
+      }
+
+      const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/backend/g, 'localhost');
+      
+      const response = await fetch(`${apiUrl}/api/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`上传失败: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      onSuccess(result, file);
+    } catch (error) {
+      console.error('文件上传错误:', error);
+      onError(error);
     }
   };
 
@@ -591,7 +627,17 @@ export default function Dashboard() {
         return <InputNumber style={{ width: "100%" }} />;
       case "file":
         return (
-          <Upload>
+          <Upload
+            customRequest={handleUpload}
+            maxCount={1}
+            onChange={(info) => {
+              if (info.file.status === 'done') {
+                message.success(`${info.file.name} 文件上传成功`);
+              } else if (info.file.status === 'error') {
+                message.error(`${info.file.name} 文件上传失败`);
+              }
+            }}
+          >
             <Button>选择文件</Button>
           </Upload>
         );
@@ -647,7 +693,7 @@ export default function Dashboard() {
   return (
     <Layout style={{ height: "100%", background: "#f0f2f5" }}>
       <Layout style={{ height: "100%" }}>
-        {/* 左侧任务树 */}
+        {/* 左侧工具树 */}
         <div style={{ position: "relative", display: "flex" }}>
           <Sider
             width={siderWidth}
@@ -680,7 +726,7 @@ export default function Dashboard() {
               icon={<PlusOutlined />}
               onClick={() => router.push("/dashboard/jobs")}
             >
-              新建任务
+              新建工具
             </Button>
           </div>
           <div style={{ padding: "8px" }}>
@@ -704,7 +750,7 @@ export default function Dashboard() {
                 />
               ) : (
                 <Empty
-                  description="暂无任务"
+                  description="暂无工具"
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   style={{ marginTop: 50 }}
                 />
@@ -754,13 +800,13 @@ export default function Dashboard() {
               </Title>
               <div style={{ marginBottom: 16 }}>
                 <Text type="secondary">
-                  该路径下共有 {jobsInSelectedPath.length} 个任务
+                  该路径下共有 {jobsInSelectedPath.length} 个工具
                 </Text>
               </div>
               {jobsInSelectedPath.length > 0 ? (
                 <div>
                   <Title level={5} style={{ marginBottom: 16 }}>
-                    任务列表
+                    工具列表
                   </Title>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {jobsInSelectedPath.map((job) => (
@@ -782,7 +828,7 @@ export default function Dashboard() {
                           e.currentTarget.style.backgroundColor = "transparent";
                         }}
                         onClick={() => {
-                          // 触发任务节点的选择
+                          // 触发工具节点的选择
                           const jobNode = treeData
                             .flatMap((node) => getAllNodes(node))
                             .find((n) => n.key === `job-${job.id}`);
@@ -819,7 +865,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <Empty
-                  description="该路径下暂无任务"
+                  description="该路径下暂无工具"
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   style={{ marginTop: 50 }}
                 />
@@ -873,7 +919,7 @@ export default function Dashboard() {
                       </Title>
                     </>
                   ) : (
-                    <Text type="secondary">该任务没有配置参数</Text>
+                    <Text type="secondary">该工具没有配置参数</Text>
                   )}
                   <Form
                     form={runForm}
@@ -923,22 +969,22 @@ export default function Dashboard() {
           ) : (
             <div style={{ textAlign: "center", padding: "50px 0" }}>
               <Empty
-                description="请选择一个任务查看详情"
+                description="请选择一个工具查看详情"
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
               />
             </div>
           )}
 
-          {/* 任务结果区域 */}
+          {/* 工具结果区域 */}
           {selectedJob && (
             <div style={{ marginTop: 32, borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
               <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
-                任务结果
+                工具结果
               </Title>
               {running ? (
                 <div style={{ textAlign: "center", padding: "50px 0" }}>
                   <Spin size="large" />
-                  <div style={{ marginTop: 16, color: "#666" }}>任务正在运行中...</div>
+                  <div style={{ marginTop: 16, color: "#666" }}>工具正在运行中...</div>
                 </div>
               ) : runError ? (
                 <div
@@ -1125,9 +1171,9 @@ export default function Dashboard() {
         </Content>
       </Layout>
 
-      {/* 任务编辑/创建模态框 */}
+      {/* 工具编辑/创建模态框 */}
       <Modal
-        title={editingJob ? "编辑任务" : "新建任务"}
+        title={editingJob ? "编辑工具" : "新建工具"}
         open={isJobModalOpen}
         onOk={handleSaveJob}
         onCancel={() => {
@@ -1141,21 +1187,21 @@ export default function Dashboard() {
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"
-            label="任务名称"
-            rules={[{ required: true, message: "请输入任务名称" }]}
+            label="工具名称"
+            rules={[{ required: true, message: "请输入工具名称" }]}
           >
-            <Input placeholder="请输入任务名称" />
+            <Input placeholder="请输入工具名称" />
           </Form.Item>
           <Form.Item
             name="path"
-            label="任务路径"
-            rules={[{ required: true, message: "请输入任务路径" }]}
+            label="工具路径"
+            rules={[{ required: true, message: "请输入工具路径" }]}
           >
             <Input placeholder="例如: 数据接入/炼丹炉" />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea
-              placeholder="请输入任务描述"
+              placeholder="请输入工具描述"
               rows={3}
               showCount
               maxLength={200}

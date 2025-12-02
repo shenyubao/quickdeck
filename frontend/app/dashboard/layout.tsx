@@ -24,6 +24,7 @@ import {
   SettingOutlined,
   PlusOutlined,
   KeyOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import { signOut, useSession } from "next-auth/react";
 import { projectApi, type Project } from "@/lib/api";
@@ -103,6 +104,7 @@ export default function DashboardLayout({
   // 根据路径确定选中的菜单项
   const getSelectedKey = () => {
     if (pathname?.includes("/projects")) return "project-management";
+    if (pathname?.includes("/users")) return "user-management";
     if (pathname?.includes("/history")) return "history";
     if (pathname?.includes("/credentials")) return "credentials";
     return "tasks";
@@ -112,7 +114,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     const key = getSelectedKey();
-    // 如果没有项目，且选中的是任务相关的菜单，自动切换到项目管理
+    // 如果没有项目，且选中的是工具相关的菜单，自动切换到项目管理
     if (projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
       setSelectedMenu("project-management");
       // 如果不在项目管理页面，则跳转过去
@@ -176,13 +178,13 @@ export default function DashboardLayout({
 
   // 侧边栏菜单项 - 根据是否有项目动态显示
   const sideMenuItems: MenuProps["items"] = [
-    // 只有当有项目时才显示任务相关的菜单
+    // 只有当有项目时才显示工具相关的菜单
     ...(projects.length > 0
       ? [
           {
             key: "tasks",
             icon: <CheckSquareOutlined />,
-            label: "任务列表",
+            label: "工具列表",
           },
           {
             key: "history",
@@ -204,6 +206,11 @@ export default function DashboardLayout({
       icon: <SettingOutlined />,
       label: "项目管理",
     },
+    {
+      key: "user-management",
+      icon: <TeamOutlined />,
+      label: "用户管理",
+    },
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
@@ -216,6 +223,8 @@ export default function DashboardLayout({
       router.push("/dashboard/credentials");
     } else if (key === "project-management") {
       router.push("/dashboard/projects");
+    } else if (key === "user-management") {
+      router.push("/dashboard/users");
     }
   };
 

@@ -13,6 +13,15 @@ class UserCreate(UserBase):
     password: str
 
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    nickname: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
 class UserResponse(UserBase):
     id: int
     is_active: bool
@@ -133,8 +142,8 @@ class WorkflowCreate(BaseModel):
     timeout: Optional[int] = None  # 超时时间（分钟）
     retry: int = 0  # 重试次数
     node_type: str = "local"  # "local" or "remote"
-    schedule_enabled: bool = False  # 是否定时任务
-    schedule_crontab: Optional[str] = None  # 定时任务规则
+    schedule_enabled: bool = False  # 是否定时工具
+    schedule_crontab: Optional[str] = None  # 定时工具规则
     schedule_timezone: str = "UTC"  # 时区
     options: List[OptionCreate] = []  # 参数列表
     steps: List[StepCreate] = []  # 步骤列表
@@ -202,12 +211,12 @@ class JobDetailResponse(JobBase):
 
 
 class JobRunRequest(BaseModel):
-    """任务运行请求"""
+    """工具运行请求"""
     args: Optional[Dict[str, Any]] = None  # 用户输入参数
 
 
 class JobRunResponse(BaseModel):
-    """任务运行响应"""
+    """工具运行响应"""
     output: str  # HTML 输出
     result: Dict[str, Any]  # 执行结果
     error: Optional[str] = None  # 错误信息（如果有）
@@ -246,7 +255,7 @@ class JobExecutionResponse(BaseModel):
 
 class JobExecutionDetailResponse(JobExecutionResponse):
     """执行记录详情响应（包含关联信息）"""
-    job_name: Optional[str] = None  # 任务名称
+    job_name: Optional[str] = None  # 工具名称
     user_username: Optional[str] = None  # 执行人用户名
     user_nickname: Optional[str] = None  # 执行人昵称
 

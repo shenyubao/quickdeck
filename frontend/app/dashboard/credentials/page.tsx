@@ -35,6 +35,7 @@ export default function CredentialsPage() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [form] = Form.useForm();
+  const credentialType = Form.useWatch("credential_type", form);
 
   // 获取当前项目（从 localStorage 获取项目名称，然后从项目列表中找到对应的项目）
   const currentProject = useMemo(() => {
@@ -93,12 +94,30 @@ export default function CredentialsPage() {
   const handleOpenModal = (credential?: Credential) => {
     if (credential) {
       setEditingCredential(credential);
-      form.setFieldsValue({
+      const config = credential.config || {};
+      const formValues: any = {
         credential_type: credential.credential_type,
         name: credential.name,
         description: credential.description,
-        config: JSON.stringify(credential.config, null, 2),
-      });
+      };
+      
+      // 根据凭证类型填充对应的字段
+      if (credential.credential_type === "mysql") {
+        formValues.host = config.host || "";
+        formValues.port = config.port || "";
+        formValues.user = config.user || "";
+        formValues.password = config.password || "";
+        formValues.database = config.database || "";
+      } else if (credential.credential_type === "oss") {
+        formValues.endpoint = config.endpoint || "";
+        formValues.access_key_id = config.access_key_id || "";
+        formValues.access_key_secret = config.access_key_secret || "";
+        formValues.bucket = config.bucket || "";
+      } else if (credential.credential_type === "deepseek") {
+        formValues.api_key = config.api_key || "";
+      }
+      
+      form.setFieldsValue(formValues);
     } else {
       setEditingCredential(null);
       form.resetFields();
@@ -113,6 +132,21 @@ export default function CredentialsPage() {
     form.resetFields();
   };
 
+  // 处理凭证类型变更
+  const handleCredentialTypeChange = (type: string) => {
+    // 清空所有配置字段
+    const allConfigFields = [
+      "host", "port", "user", "password", "database",
+      "endpoint", "access_key_id", "access_key_secret", "bucket",
+      "api_key"
+    ];
+    const fieldsToReset: Record<string, undefined> = {};
+    allConfigFields.forEach(field => {
+      fieldsToReset[field] = undefined;
+    });
+    form.setFieldsValue(fieldsToReset);
+  };
+
   // 提交表单
   const handleSubmit = async () => {
     if (!currentProject) {
@@ -122,12 +156,28 @@ export default function CredentialsPage() {
 
     try {
       const values = await form.validateFields();
-      let config: Record<string, any>;
-      try {
-        config = JSON.parse(values.config);
-      } catch (e) {
-        message.error("配置信息必须是有效的JSON格式");
-        return;
+      let config: Record<string, any> = {};
+      
+      // 根据凭证类型组合配置对象
+      if (values.credential_type === "mysql") {
+        config = {
+          host: values.host,
+          port: parseInt(values.port) || 3306,
+          user: values.user,
+          password: values.password,
+          database: values.database,
+        };
+      } else if (values.credential_type === "oss") {
+        config = {
+          endpoint: values.endpoint,
+          access_key_id: values.access_key_id,
+          access_key_secret: values.access_key_secret,
+          bucket: values.bucket,
+        };
+      } else if (values.credential_type === "deepseek") {
+        config = {
+          api_key: values.api_key,
+        };
       }
 
       if (editingCredential) {
@@ -242,12 +292,14 @@ export default function CredentialsPage() {
       title: "操作",
       key: "action",
       width: 150,
+      fixed: "right",
       render: (_: any, record: Credential) => (
-        <Space>
+        <Space size="small">
           <Button
             type="link"
             icon={<EditOutlined />}
             onClick={() => handleOpenModal(record)}
+            size="small"
           >
             编辑
           </Button>
@@ -261,6 +313,7 @@ export default function CredentialsPage() {
               type="link"
               danger
               icon={<DeleteOutlined />}
+              size="small"
             >
               删除
             </Button>
@@ -304,6 +357,7 @@ export default function CredentialsPage() {
             dataSource={credentials}
             rowKey="id"
             loading={loading}
+            scroll={{ x: "max-content" }}
             locale={{
               emptyText: <Empty description="暂无凭证" />,
             }}
@@ -335,7 +389,7 @@ export default function CredentialsPage() {
             label="凭证类型"
             rules={[{ required: true, message: "请选择凭证类型" }]}
           >
-            <Select>
+            <Select onChange={handleCredentialTypeChange}>
               <Option value="mysql">MySQL凭证</Option>
               <Option value="oss">OSS凭证</Option>
               <Option value="deepseek">DeepSeek凭证</Option>
@@ -357,43 +411,94 @@ export default function CredentialsPage() {
             <TextArea rows={3} placeholder="请输入凭证描述（可选）" />
           </Form.Item>
 
-          <Form.Item
-            name="config"
-            label="配置信息（JSON格式）"
-            rules={[
-              { required: true, message: "请输入配置信息" },
-              {
-                validator: (_, value) => {
-                  if (!value) return Promise.resolve();
-                  try {
-                    JSON.parse(value);
-                    return Promise.resolve();
-                  } catch (e) {
-                    return Promise.reject(new Error("配置信息必须是有效的JSON格式"));
-                  }
-                },
-              },
-            ]}
-            extra={
-              <div style={{ marginTop: 8 }}>
-                <div style={{ marginBottom: 4 }}>配置示例：</div>
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  MySQL: {`{"host": "localhost", "port": 3306, "user": "root", "password": "password", "database": "dbname"}`}
-                </div>
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  OSS: {`{"endpoint": "oss-cn-hangzhou.aliyuncs.com", "access_key_id": "xxx", "access_key_secret": "xxx", "bucket": "bucket-name"}`}
-                </div>
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  DeepSeek: {`{"api_key": "sk-xxx"}`}
-                </div>
-              </div>
-            }
-          >
-            <TextArea
-              rows={8}
-              placeholder='请输入JSON格式的配置信息，例如：{"host": "localhost", "port": 3306}'
-            />
-          </Form.Item>
+          {/* MySQL 凭证配置字段 */}
+          {credentialType === "mysql" && (
+            <>
+              <Form.Item
+                name="host"
+                label="主机地址"
+                rules={[{ required: true, message: "请输入主机地址" }]}
+              >
+                <Input placeholder="例如: localhost 或 192.168.1.100" />
+              </Form.Item>
+              <Form.Item
+                name="port"
+                label="端口"
+                rules={[{ required: true, message: "请输入端口" }]}
+                initialValue="3306"
+              >
+                <Input type="number" placeholder="例如: 3306" />
+              </Form.Item>
+              <Form.Item
+                name="user"
+                label="用户名"
+                rules={[{ required: true, message: "请输入用户名" }]}
+              >
+                <Input placeholder="请输入数据库用户名" />
+              </Form.Item>
+              <Form.Item
+                name="password"
+                label="密码"
+                rules={[{ required: true, message: "请输入密码" }]}
+              >
+                <Input.Password placeholder="请输入数据库密码" />
+              </Form.Item>
+              <Form.Item
+                name="database"
+                label="数据库名"
+                rules={[{ required: true, message: "请输入数据库名" }]}
+              >
+                <Input placeholder="请输入数据库名称" />
+              </Form.Item>
+            </>
+          )}
+
+          {/* OSS 凭证配置字段 */}
+          {credentialType === "oss" && (
+            <>
+              <Form.Item
+                name="endpoint"
+                label="Endpoint"
+                rules={[{ required: true, message: "请输入 Endpoint" }]}
+              >
+                <Input placeholder="例如: oss-cn-hangzhou.aliyuncs.com" />
+              </Form.Item>
+              <Form.Item
+                name="access_key_id"
+                label="Access Key ID"
+                rules={[{ required: true, message: "请输入 Access Key ID" }]}
+              >
+                <Input placeholder="请输入 Access Key ID" />
+              </Form.Item>
+              <Form.Item
+                name="access_key_secret"
+                label="Access Key Secret"
+                rules={[{ required: true, message: "请输入 Access Key Secret" }]}
+              >
+                <Input.Password placeholder="请输入 Access Key Secret" />
+              </Form.Item>
+              <Form.Item
+                name="bucket"
+                label="Bucket 名称"
+                rules={[{ required: true, message: "请输入 Bucket 名称" }]}
+              >
+                <Input placeholder="请输入 Bucket 名称" />
+              </Form.Item>
+            </>
+          )}
+
+          {/* DeepSeek 凭证配置字段 */}
+          {credentialType === "deepseek" && (
+            <>
+              <Form.Item
+                name="api_key"
+                label="API Key"
+                rules={[{ required: true, message: "请输入 API Key" }]}
+              >
+                <Input.Password placeholder="请输入 DeepSeek API Key (例如: sk-xxx)" />
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
     </div>

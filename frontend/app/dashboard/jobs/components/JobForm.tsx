@@ -27,7 +27,7 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
 } from "@ant-design/icons";
-import { jobApi, credentialApi, type Project, type Credential } from "@/lib/api";
+import { jobApi, credentialApi, uploadApi, type Project, type Credential } from "@/lib/api";
 import PythonCodeEditor from "./PythonCodeEditor";
 
 const { Title } = Typography;
@@ -69,7 +69,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   // 保存加载的原始数据，用于在提交时补充未访问 tab 的字段
   const [loadedFormData, setLoadedFormData] = useState<any>(null);
 
-  // 如果是编辑模式，加载任务详情
+  // 如果是编辑模式，加载工具详情
   useEffect(() => {
     const loadJobDetail = async () => {
       if (!isEditMode || !jobId) return;
@@ -137,8 +137,8 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
         setLoadedFormData(formValues);
         form.setFieldsValue(formValues);
       } catch (error) {
-        console.error("加载任务详情失败:", error);
-        message.error("加载任务详情失败");
+        console.error("加载工具详情失败:", error);
+        message.error("加载工具详情失败");
         router.push("/dashboard");
       } finally {
         setLoadingJob(false);
@@ -244,16 +244,16 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       };
 
       if (isEditMode && jobId) {
-        // 更新任务
+        // 更新工具
         await jobApi.update(jobId, {
           name: mergedValues.name,
           path: mergedValues.path,
           description: mergedValues.description,
           workflow: workflowData,
         });
-        message.success("任务更新成功");
+        message.success("工具更新成功");
       } else {
-        // 创建任务
+        // 创建工具
         await jobApi.create({
           name: mergedValues.name,
           path: mergedValues.path,
@@ -261,7 +261,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
           project_id: currentProject.id,
           workflow: workflowData,
         });
-        message.success("任务创建成功");
+        message.success("工具创建成功");
       }
       router.push("/dashboard");
     } catch (error) {
@@ -448,20 +448,20 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                 <div style={{ maxWidth: 800, padding: "20px 0" }}>
                   <Form.Item
                     name="name"
-                    label="任务名称"
+                    label="工具名称"
                     rules={[
-                      { required: true, message: "请输入任务名称" },
-                      { max: 100, message: "任务名称不能超过100个字符" },
+                      { required: true, message: "请输入工具名称" },
+                      { max: 100, message: "工具名称不能超过100个字符" },
                     ]}
                   >
-                    <Input placeholder="请输入任务名称" />
+                    <Input placeholder="请输入工具名称" />
                   </Form.Item>
 
                   <Form.Item
                     name="path"
-                    label="任务路径"
+                    label="工具路径"
                     rules={[
-                      { required: true, message: "请输入任务路径" },
+                      { required: true, message: "请输入工具路径" },
                       {
                         pattern: /^[^\/].*[^\/]$|^[^\/]$/,
                         message: "路径格式不正确，不能以 / 开头或结尾",
@@ -474,12 +474,12 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
 
                   <Form.Item
                     name="description"
-                    label="任务描述"
+                    label="工具描述"
                     rules={[{ max: 500, message: "描述不能超过500个字符" }]}
-                    extra="可选，用于描述任务的用途或负责人信息"
+                    extra="可选，用于描述工具的用途或负责人信息"
                   >
                     <Input.TextArea
-                      placeholder="请输入任务描述（可选）"
+                      placeholder="请输入工具描述（可选）"
                       rows={4}
                       showCount
                       maxLength={500}
@@ -1084,12 +1084,12 @@ def execute(args: dict) -> tuple:
       },
       {
         key: "schedule",
-        label: "定时任务",
+        label: "定时工具",
         children: (
           <div style={{ maxWidth: 800, padding: "20px 0" }}>
             <Form.Item
               name="schedule_enabled"
-              label="是否定时任务"
+              label="是否定时工具"
               valuePropName="checked"
             >
               <Switch checkedChildren="启用" unCheckedChildren="禁用" />
@@ -1105,7 +1105,7 @@ def execute(args: dict) -> tuple:
                   <>
                     <Form.Item
                       name="schedule_crontab"
-                      label="定时任务规则 (Crontab)"
+                      label="定时工具规则 (Crontab)"
                       rules={[
                         { required: true, message: "请输入 Crontab 表达式" },
                       ]}
@@ -1185,9 +1185,9 @@ def execute(args: dict) -> tuple:
                             style={{ marginBottom: "8px" }}
                           >
                             <Select placeholder="请选择触发条件">
-                              <Select.Option value="on_start">任务开始</Select.Option>
-                              <Select.Option value="on_success">任务成功</Select.Option>
-                              <Select.Option value="on_failure">任务失败</Select.Option>
+                              <Select.Option value="on_start">工具开始</Select.Option>
+                              <Select.Option value="on_success">工具成功</Select.Option>
+                              <Select.Option value="on_failure">工具失败</Select.Option>
                               <Select.Option value="on_retryable_fail">可重试失败</Select.Option>
                               <Select.Option value="average_duration_exceeded">平均时长超限</Select.Option>
                             </Select>
@@ -1268,7 +1268,7 @@ def execute(args: dict) -> tuple:
             <Form.Item
               name="timeout"
               label="超时时间（分钟）"
-              extra="任务执行超时时间，超过此时间将自动终止"
+              extra="工具执行超时时间，超过此时间将自动终止"
             >
               <InputNumber
                 min={1}
@@ -1280,7 +1280,7 @@ def execute(args: dict) -> tuple:
               name="retry"
               label="重试次数"
               initialValue={0}
-              extra="任务失败后自动重试的次数"
+              extra="工具失败后自动重试的次数"
             >
               <InputNumber
                 min={0}
@@ -1325,7 +1325,7 @@ def execute(args: dict) -> tuple:
                   loading={submitting}
                   size="large"
                 >
-                  {isEditMode ? "保存修改" : "创建任务"}
+                  {isEditMode ? "保存修改" : "创建工具"}
                 </Button>
                 <Button onClick={handleCancel} size="large">
                   取消
@@ -1401,7 +1401,39 @@ def execute(args: dict) -> tuple:
                     break;
                   case "file":
                     inputComponent = (
-                      <Upload>
+                      <Upload
+                        customRequest={async ({ file, onSuccess, onError }) => {
+                          try {
+                            // 调用上传接口
+                            const result = await uploadApi.upload(file as File);
+                            // 将文件路径保存到表单值中
+                            form.setFieldValue(option.name, result.path);
+                            // 调用 onSuccess，传递结果对象
+                            if (onSuccess) {
+                              onSuccess(result, new XMLHttpRequest());
+                            }
+                          } catch (error) {
+                            console.error("文件上传失败:", error);
+                            message.error(`文件上传失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                            if (onError) {
+                              onError(error as Error);
+                            }
+                          }
+                        }}
+                        maxCount={1}
+                        onRemove={() => {
+                          // 移除文件时，清空表单值
+                          form.setFieldValue(option.name, undefined);
+                        }}
+                        // 显示已上传的文件名
+                        fileList={form.getFieldValue(option.name) ? [
+                          {
+                            uid: "-1",
+                            name: form.getFieldValue(option.name)?.split("/").pop() || "已上传文件",
+                            status: "done",
+                          }
+                        ] : []}
+                      >
                         <Button>选择文件</Button>
                       </Upload>
                     );
@@ -1452,7 +1484,7 @@ def execute(args: dict) -> tuple:
             </>
           ) : (
             <div style={{ padding: "20px", textAlign: "center", color: "#999" }}>
-              当前任务未配置输入参数，脚本将使用空参数运行
+              当前工具未配置输入参数，脚本将使用空参数运行
             </div>
           )}
         </Form>

@@ -23,7 +23,7 @@ async def get_jobs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的任务列表"""
+    """获取当前用户的工具列表"""
     query = db.query(Job).filter(Job.owner_id == current_user.id)
     
     # 如果指定了项目ID，则过滤项目
@@ -50,7 +50,7 @@ async def get_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取单个任务"""
+    """获取单个工具"""
     job = db.query(Job).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
@@ -59,7 +59,7 @@ async def get_job(
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在或无权限访问"
+            detail="工具不存在或无权限访问"
         )
     
     return job
@@ -71,7 +71,7 @@ async def get_job_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取任务详情（包含工作流信息）"""
+    """获取工具详情（包含工作流信息）"""
     job = db.query(Job).options(
         joinedload(Job.workflow).joinedload(Workflow.options),
         joinedload(Job.workflow).joinedload(Workflow.steps),
@@ -84,10 +84,10 @@ async def get_job_detail(
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在或无权限访问"
+            detail="工具不存在或无权限访问"
         )
     
-    # 如果任务有工作流，需要加载关联数据
+    # 如果工具有工作流，需要加载关联数据
     workflow_data = None
     if job.workflow:
         workflow = job.workflow
@@ -164,7 +164,7 @@ async def create_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """创建任务（可选包含工作流）"""
+    """创建工具（可选包含工作流）"""
     # 验证项目是否存在且属于当前用户
     project = db.query(Project).filter(
         Project.id == job_data.project_id,
@@ -177,7 +177,7 @@ async def create_job(
             detail="项目不存在或无权限访问"
         )
     
-    # 创建任务
+    # 创建工具
     job = Job(
         name=job_data.name,
         path=job_data.path,
@@ -273,7 +273,7 @@ async def update_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """更新任务（可选包含工作流）"""
+    """更新工具（可选包含工作流）"""
     job = db.query(Job).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
@@ -282,7 +282,7 @@ async def update_job(
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在或无权限访问"
+            detail="工具不存在或无权限访问"
         )
     
     # 更新字段
@@ -396,7 +396,7 @@ async def delete_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """删除任务"""
+    """删除工具"""
     job = db.query(Job).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
@@ -405,7 +405,7 @@ async def delete_job(
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在或无权限访问"
+            detail="工具不存在或无权限访问"
         )
     
     db.delete(job)
@@ -421,10 +421,10 @@ async def run_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """运行任务"""
+    """运行工具"""
     from app.server.job_execute_service import JobExecuteService
     
-    # 获取任务，并预加载工作流和步骤
+    # 获取工具，并预加载工作流和步骤
     job = db.query(Job).options(
         joinedload(Job.workflow).joinedload(Workflow.steps)
     ).filter(
@@ -435,7 +435,7 @@ async def run_job(
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在或无权限访问"
+            detail="工具不存在或无权限访问"
         )
     
     # 获取工作流
@@ -443,7 +443,7 @@ async def run_job(
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="任务没有配置工作流"
+            detail="工具没有配置工作流"
         )
     
     # 确保步骤被加载 - 尝试从数据库直接查询
@@ -472,7 +472,7 @@ async def run_job(
             detail="工作流没有配置步骤，无法执行。请先为工作流添加步骤。"
         )
     
-    # 调用服务执行任务
+    # 调用服务执行工具
     return JobExecuteService.execute_job(
         job=job,
         workflow=workflow,

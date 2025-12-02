@@ -1,6 +1,6 @@
 """add_job_executions
 
-添加任务执行记录表
+添加工具执行记录表
 
 Revision ID: add_job_executions
 Revises: update_option_model
@@ -32,9 +32,9 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('job_id', sa.Integer(), nullable=False, comment='所属任务'),
+        sa.Column('job_id', sa.Integer(), nullable=False, comment='所属工具'),
         sa.Column('user_id', sa.Integer(), nullable=False, comment='执行人'),
-        sa.Column('execution_type', postgresql.ENUM('manual', 'scheduled', name='executiontypeenum', create_type=False), nullable=False, server_default=sa.text("'manual'"), comment='执行方式（手动/定时任务）'),
+        sa.Column('execution_type', postgresql.ENUM('manual', 'scheduled', name='executiontypeenum', create_type=False), nullable=False, server_default=sa.text("'manual'"), comment='执行方式（手动/定时工具）'),
         sa.Column('status', postgresql.ENUM('success', 'failure', name='executionstatusenum', create_type=False), nullable=False, comment='执行状态（成功/失败）'),
         sa.Column('args', postgresql.JSON(astext_type=sa.Text()), nullable=True, comment='入参（JSON格式）'),
         sa.Column('output_text', sa.Text(), nullable=True, comment='返回的text'),
@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['job_id'], ['jobs.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id'),
-        comment='任务执行记录表'
+        comment='工具执行记录表'
     )
     
     # 3. 创建索引

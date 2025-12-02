@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import os
 import json
+import sys
 from typing import Dict, Any, Tuple
 from app.executors import StepExecutor
 from app.main import logger
@@ -66,6 +67,24 @@ class PythonScriptExecutor(StepExecutor):
                 # 使用凭证信息连接数据库...
             
             return ("执行完成", None)
+        ```
+        
+        使用 OSS 客户端语法糖:
+        ```python
+        def execute(args: dict) -> tuple:
+            # 获取 OSS 凭证ID（从参数中）
+            oss_cred_id = args.get("oss_credential")
+            
+            # 使用语法糖直接获取 OSS 客户端对象
+            bucket = credential.get_oss_client(oss_cred_id)
+            
+            # 直接使用 bucket 对象进行 OSS 操作
+            import oss2
+            objects = []
+            for obj in oss2.ObjectIterator(bucket, prefix='', max_keys=10):
+                objects.append({"key": obj.key, "size": obj.size})
+            
+            return (f"成功列出 {len(objects)} 个文件", objects)
         ```
         """
         extension = context.get("step_extension", {})
@@ -138,6 +157,49 @@ class PythonScriptExecutor(StepExecutor):
             "        \"\"\"",
             "        cred = self.get(credential_id)",
             "        return cred.get('config') if cred else None",
+            "    ",
+            "    def get_oss_client(self, credential_id):",
+            "        \"\"\"",
+            "        根据凭证ID获取 OSS 客户端对象（语法糖）",
+            "        ",
+            "        Args:",
+            "            credential_id: OSS 凭证ID（整数或字符串）",
+            "        ",
+            "        Returns:",
+            "            oss2.Bucket 对象，可以直接用于 OSS 操作",
+            "            如果凭证不存在或配置不完整，抛出异常",
+            "        ",
+            "        使用示例:",
+            "            bucket = credential.get_oss_client(oss_cred_id)",
+            "            for obj in oss2.ObjectIterator(bucket):",
+            "                print(obj.key)",
+            "        \"\"\"",
+            "        cred = self.get(credential_id)",
+            "        if not cred:",
+            "            raise ValueError(f'未找到凭证ID为 {credential_id} 的凭证')",
+            "        ",
+            "        if cred.get('credential_type') != 'oss':",
+            "            raise ValueError(f'凭证ID {credential_id} 不是 OSS 类型凭证')",
+            "        ",
+            "        config = cred.get('config')",
+            "        if not config:",
+            "            raise ValueError(f'凭证ID {credential_id} 的配置信息为空')",
+            "        ",
+            "        endpoint = config.get('endpoint')",
+            "        access_key_id = config.get('access_key_id')",
+            "        access_key_secret = config.get('access_key_secret')",
+            "        bucket_name = config.get('bucket')",
+            "        ",
+            "        if not all([endpoint, access_key_id, access_key_secret, bucket_name]):",
+            "            raise ValueError(f'OSS 凭证配置不完整，缺少必需的字段: endpoint, access_key_id, access_key_secret, bucket')",
+            "        ",
+            "        try:",
+            "            import oss2",
+            "            auth = oss2.Auth(access_key_id, access_key_secret)",
+            "            bucket = oss2.Bucket(auth, endpoint, bucket_name)",
+            "            return bucket",
+            "        except ImportError:",
+            "            raise ImportError('未安装 oss2 库，请先安装: pip install oss2')",
             "",
             "# 创建凭证工具类实例",
             "credential = CredentialHelper()",
@@ -194,14 +256,23 @@ class PythonScriptExecutor(StepExecutor):
         final_script = "\n".join(script_parts)
         
         # 创建临时脚本文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(final_script)
-            script_path = f.name
-        
+        script_path = None
         try:
-            # 执行脚本
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(final_script)
+                script_path = f.name
+            
+            # 确保 script_path 是字符串类型
+            if not isinstance(script_path, str):
+                raise ValueError(f"script_path 必须是字符串类型，但得到了 {type(script_path).__name__}: {script_path}")
+            
+            # 确保 sys.executable 是字符串类型
+            if not isinstance(sys.executable, str):
+                raise ValueError(f"sys.executable 必须是字符串类型，但得到了 {type(sys.executable).__name__}: {sys.executable}")
+            
+            # 执行脚本 - 使用当前 Python 解释器（确保使用 poetry 虚拟环境）
             process = subprocess.run(
-                ["python3", script_path],
+                [sys.executable, script_path],
                 capture_output=True,
                 text=True,
                 timeout=context.get("timeout", 300)
@@ -265,8 +336,12 @@ class PythonScriptExecutor(StepExecutor):
             raise RuntimeError(f"脚本执行出错: {str(e)}")
         finally:
             # 清理临时文件
-            if os.path.exists(script_path):
-                os.unlink(script_path)
+            if script_path and isinstance(script_path, str):
+                try:
+                    if os.path.exists(script_path):
+                        os.unlink(script_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"清理临时文件失败: script_path={script_path}, error={str(cleanup_error)}")
         
         return context, result
 

@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/executions", tags=["executions"])
 
 @router.get("", response_model=List[JobExecutionDetailResponse])
 async def get_executions(
-    job_id: Optional[int] = Query(None, description="任务ID，可选"),
+    job_id: Optional[int] = Query(None, description="工具ID，可选"),
     status_filter: Optional[str] = Query(None, description="状态过滤：success 或 failure"),
     execution_type: Optional[str] = Query(None, description="执行方式过滤：manual 或 scheduled"),
     limit: int = Query(100, ge=1, le=1000, description="返回记录数限制"),
@@ -46,9 +46,9 @@ async def get_executions(
             joinedload(JobExecution.user)
         )
         
-        # 只返回当前用户有权限查看的任务的执行记录
-        # 用户可以看到自己拥有的任务或可见的任务的执行记录
-        # 使用子查询来查找可见的任务
+        # 只返回当前用户有权限查看的工具的执行记录
+        # 用户可以看到自己拥有的工具或可见的工具的执行记录
+        # 使用子查询来查找可见的工具
         visible_job_ids_subq = db.query(job_visible_users.c.job_id).filter(
             job_visible_users.c.user_id == current_user.id
         )
@@ -60,9 +60,9 @@ async def get_executions(
             )
         )
         
-        # 如果指定了任务ID，则过滤任务
+        # 如果指定了工具ID，则过滤工具
         if job_id is not None:
-            # 验证任务是否属于当前用户或可见
+            # 验证工具是否属于当前用户或可见
             visible_job_ids_subq = db.query(job_visible_users.c.job_id).filter(
                 job_visible_users.c.user_id == current_user.id
             )
@@ -77,7 +77,7 @@ async def get_executions(
             if not job:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="任务不存在或无权限访问"
+                    detail="工具不存在或无权限访问"
                 )
             query = query.filter(JobExecution.job_id == job_id)
         
@@ -165,12 +165,12 @@ async def get_execution(
             detail="执行记录不存在"
         )
     
-    # 验证权限：用户必须拥有该任务或任务对用户可见
+    # 验证权限：用户必须拥有该工具或工具对用户可见
     job = execution.job
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="关联的任务不存在"
+            detail="关联的工具不存在"
         )
     
     # 检查用户是否有权限
@@ -178,7 +178,7 @@ async def get_execution(
     if job.owner_id == current_user.id:
         has_permission = True
     else:
-        # 检查任务是否对用户可见
+        # 检查工具是否对用户可见
         visible_count = db.query(job_visible_users).filter(
             job_visible_users.c.job_id == job.id,
             job_visible_users.c.user_id == current_user.id

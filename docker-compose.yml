@@ -45,16 +45,21 @@ services:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
+    # 加载 .env.local 文件，允许生产环境自定义配置
+    env_file:
+      - ./frontend/.env.local
     environment:
       - NODE_ENV=development
       # 使用相对路径，通过 nginx 代理访问 API
       - NEXT_PUBLIC_API_URL=
       # 服务端在 Docker 容器内，可以使用内部网络名称
       - API_URL=http://backend:8000
-      - NEXTAUTH_URL=http://localhost
-      - NEXT_PUBLIC_NEXTAUTH_URL=http://localhost
-      - AUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret
-      - NEXTAUTH_SECRET=your-secret-key-change-in-production-please-use-a-strong-random-secret
+      # NEXTAUTH_URL 和 NEXTAUTH_SECRET 从 .env.local 文件读取
+      # 如果 .env.local 不存在，使用以下默认值（仅用于开发环境）
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost}
+      - NEXT_PUBLIC_NEXTAUTH_URL=${NEXT_PUBLIC_NEXTAUTH_URL:-${NEXTAUTH_URL:-http://localhost}}
+      - AUTH_SECRET=${AUTH_SECRET:-your-secret-key-change-in-production-please-use-a-strong-random-secret}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-secret-key-change-in-production-please-use-a-strong-random-secret}
     depends_on:
       - backend
     command: npm run dev

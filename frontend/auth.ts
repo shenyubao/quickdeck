@@ -154,6 +154,17 @@ export const authConfig = {
       const isOnAuthPage = nextUrl.pathname.startsWith("/auth");
       const isOnRoot = nextUrl.pathname === "/";
       
+      // 获取正确的 base URL，优先使用 NEXTAUTH_URL
+      const getBaseUrl = () => {
+        const nextAuthUrl = process.env.NEXTAUTH_URL;
+        if (nextAuthUrl) {
+          return nextAuthUrl;
+        }
+        // 如果 NEXTAUTH_URL 未设置，使用 nextUrl 的 origin
+        // 注意：在生产环境中应该始终设置 NEXTAUTH_URL
+        return nextUrl.origin;
+      };
+      
       // 访问仪表板需要登录
       if (isOnDashboard) {
         if (isLoggedIn) return true;
@@ -162,10 +173,11 @@ export const authConfig = {
       
       // 访问根路径：已登录跳转到仪表板，未登录跳转到登录页
       if (isOnRoot) {
+        const baseUrl = getBaseUrl();
         if (isLoggedIn) {
-          return Response.redirect(new URL("/dashboard", nextUrl));
+          return Response.redirect(new URL("/dashboard", baseUrl));
         } else {
-          return Response.redirect(new URL("/auth/signin", nextUrl));
+          return Response.redirect(new URL("/auth/signin", baseUrl));
         }
       }
       

@@ -138,13 +138,162 @@ run_migrations() {
     fi
 }
 
+# 检查镜像是否存在且代码是否有更新
+check_images() {
+    log_info "检查 Docker 镜像和代码更新..."
+    
+    # 检查需要构建的服务（backend 和 frontend）
+    local need_build=false
+    
+    # 获取项目名称（docker-compose 默认使用目录名作为项目前缀）
+    local project_name=$(basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
+    
+    # 检查 backend 和 frontend 服务的镜像是否存在
+    for service in backend frontend; do
+        # 检查服务是否有 build 配置
+        if docker-compose -f "$COMPOSE_FILE" config 2>/dev/null | grep -A 10 "^  ${service}:" | grep -q "build:"; then
+            local image_id=""
+            local image_found=false
+            
+            # 方法1: 使用 docker-compose images 检查（如果容器存在）
+            image_id=$(docker-compose -f "$COMPOSE_FILE" images -q "$service" 2>/dev/null | head -1)
+            if [ -n "$image_id" ]; then
+                image_found=true
+            else
+                # 方法2: 直接检查 docker images 中是否存在相关镜像
+                # docker-compose 构建的镜像名称格式通常是：项目名_服务名 或 项目名-服务名
+                # 尝试多种可能的命名格式
+                for pattern in "${project_name}_${service}" "${project_name}-${service}" "quickdeck_${service}" "quickdeck-${service}"; do
+                    image_id=$(docker images --format "{{.ID}}" --filter "reference=${pattern}:*" 2>/dev/null | head -1)
+                    if [ -n "$image_id" ]; then
+                        image_found=true
+                        break
+                    fi
+                done
+            fi
+            
+            if [ "$image_found" = false ]; then
+                need_build=true
+                log_info "服务 $service 的镜像不存在，需要构建"
+                break
+            else
+                # 镜像存在，检查代码是否有更新
+                local code_updated=false
+                
+                # 获取镜像创建时间
+                local image_created=$(docker inspect --format='{{.Created}}' "$image_id" 2>/dev/null)
+                if [ -z "$image_created" ]; then
+                    # 如果无法获取创建时间，默认需要重新构建
+                    code_updated=true
+                    log_info "无法获取镜像创建时间，将重新构建服务 $service"
+                else
+                    # 转换镜像创建时间为 Unix 时间戳
+                    # Docker 镜像时间格式: 2024-01-01T12:00:00.123456789Z
+                    local image_timestamp=0
+                    if [[ "$OSTYPE" == "darwin"* ]]; then
+                        # macOS
+                        local date_str="${image_created%.*}"  # 移除纳秒部分
+                        date_str="${date_str%Z}"  # 移除 Z
+                        date_str="${date_str%+*}"  # 移除时区偏移
+                        image_timestamp=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$date_str" +%s 2>/dev/null || echo "0")
+                    else
+                        # Linux
+                        image_timestamp=$(date -d "$image_created" +%s 2>/dev/null || echo "0")
+                    fi
+                    
+                    # 如果时间戳转换失败，默认需要重新构建
+                    if [ "$image_timestamp" = "0" ]; then
+                        code_updated=true
+                        log_info "无法解析镜像创建时间，将重新构建服务 $service"
+                    else
+                        # 只有在时间戳有效时才检查文件更新
+                        # 检查关键文件的修改时间
+                        local service_dir="${PROJECT_DIR}/${service}"
+                        local dockerfile="${service_dir}/Dockerfile"
+                        
+                        # 检查 Dockerfile
+                        if [ "$code_updated" = false ] && [ -f "$dockerfile" ]; then
+                            local dockerfile_timestamp=$(stat -f %m "$dockerfile" 2>/dev/null || stat -c %Y "$dockerfile" 2>/dev/null || echo "0")
+                            if [ "$dockerfile_timestamp" != "0" ] && [ "$dockerfile_timestamp" -gt "$image_timestamp" ]; then
+                                code_updated=true
+                                log_info "服务 $service 的 Dockerfile 已更新，需要重新构建"
+                            fi
+                        fi
+                        
+                        # 检查依赖文件
+                        if [ "$code_updated" = false ]; then
+                            if [ "$service" = "backend" ]; then
+                                local dep_file="${service_dir}/pyproject.toml"
+                                if [ -f "$dep_file" ]; then
+                                    local dep_timestamp=$(stat -f %m "$dep_file" 2>/dev/null || stat -c %Y "$dep_file" 2>/dev/null || echo "0")
+                                    if [ "$dep_timestamp" != "0" ] && [ "$dep_timestamp" -gt "$image_timestamp" ]; then
+                                        code_updated=true
+                                        log_info "服务 $service 的依赖文件已更新，需要重新构建"
+                                    fi
+                                fi
+                            elif [ "$service" = "frontend" ]; then
+                                local dep_file="${service_dir}/package.json"
+                                if [ -f "$dep_file" ]; then
+                                    local dep_timestamp=$(stat -f %m "$dep_file" 2>/dev/null || stat -c %Y "$dep_file" 2>/dev/null || echo "0")
+                                    if [ "$dep_timestamp" != "0" ] && [ "$dep_timestamp" -gt "$image_timestamp" ]; then
+                                        code_updated=true
+                                        log_info "服务 $service 的依赖文件已更新，需要重新构建"
+                                    fi
+                                fi
+                            fi
+                        fi
+                        
+                        # 检查源代码目录是否有更新（检查最近修改的文件）
+                        if [ "$code_updated" = false ] && ([ -d "${service_dir}/app" ] || [ -d "${service_dir}/src" ]); then
+                            # 查找源代码目录中最新的文件修改时间
+                            local source_dir=""
+                            if [ -d "${service_dir}/app" ]; then
+                                source_dir="${service_dir}/app"
+                            elif [ -d "${service_dir}/src" ]; then
+                                source_dir="${service_dir}/src"
+                            fi
+                            
+                            if [ -n "$source_dir" ]; then
+                                # 获取源代码目录中最新的文件修改时间
+                                local latest_source_timestamp=$(find "$source_dir" -type f -exec stat -f %m {} \; 2>/dev/null | sort -rn | head -1)
+                                if [ -z "$latest_source_timestamp" ]; then
+                                    latest_source_timestamp=$(find "$source_dir" -type f -exec stat -c %Y {} \; 2>/dev/null | sort -rn | head -1)
+                                fi
+                                
+                                if [ -n "$latest_source_timestamp" ] && [ "$latest_source_timestamp" -gt "$image_timestamp" ]; then
+                                    code_updated=true
+                                    log_info "服务 $service 的源代码已更新，需要重新构建"
+                                fi
+                            fi
+                        fi
+                    fi
+                fi
+                
+                if [ "$code_updated" = true ]; then
+                    need_build=true
+                    break
+                fi
+            fi
+        fi
+    done
+    
+    if [ "$need_build" = true ]; then
+        return 1
+    else
+        log_success "所有镜像已存在且代码未更新，跳过构建"
+        return 0
+    fi
+}
+
 # 启动服务
 start_services() {
     log_info "启动生产环境服务..."
     
     # 构建镜像（如果需要）
-    log_info "构建 Docker 镜像..."
-    docker-compose -f "$COMPOSE_FILE" build --no-cache --progress=plain
+    if ! check_images; then
+        log_info "构建 Docker 镜像..."
+        docker-compose -f "$COMPOSE_FILE" build --progress=plain
+    fi
     
     # 启动数据库
     log_info "启动数据库..."

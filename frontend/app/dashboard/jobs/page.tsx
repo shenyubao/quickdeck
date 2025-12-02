@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, Button, Typography, Spin } from "antd";
 import { ArrowLeftOutlined } from "@ant-design/icons";
@@ -9,7 +9,7 @@ import JobForm from "./components/JobForm";
 
 const { Title } = Typography;
 
-export default function NewJobPage() {
+function JobPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id");
@@ -154,6 +154,18 @@ export default function NewJobPage() {
         ) : null}
       </Spin>
     </div>
+  );
+}
+
+export default function NewJobPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "400px" }}>
+        <Spin size="large" />
+      </div>
+    }>
+      <JobPageContent />
+    </Suspense>
   );
 }
 

@@ -2,6 +2,9 @@ FROM python:3.12.11-slim
 
 WORKDIR /app
 
+# 配置 pip 使用清华源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
 # 安装 Poetry
 RUN pip install poetry==1.8.3
 

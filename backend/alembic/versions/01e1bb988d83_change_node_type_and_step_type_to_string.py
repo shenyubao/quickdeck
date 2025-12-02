@@ -20,13 +20,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. 将 node_type 列从枚举类型改为字符串类型
+    # 1. 先删除依赖于枚举类型的默认值
+    op.execute("ALTER TABLE workflows ALTER COLUMN node_type DROP DEFAULT")
+    
+    # 2. 将 node_type 列从枚举类型改为字符串类型
     op.execute("ALTER TABLE workflows ALTER COLUMN node_type TYPE VARCHAR USING node_type::text")
     
-    # 2. 将 step_type 列从枚举类型改为字符串类型
+    # 3. 重新设置默认值为字符串
+    op.execute("ALTER TABLE workflows ALTER COLUMN node_type SET DEFAULT 'local'")
+    
+    # 4. 将 step_type 列从枚举类型改为字符串类型
     op.execute("ALTER TABLE steps ALTER COLUMN step_type TYPE VARCHAR USING step_type::text")
     
-    # 3. 删除不再使用的枚举类型（如果存在）
+    # 5. 删除不再使用的枚举类型（如果存在）
     op.execute("DROP TYPE IF EXISTS nodetypeenum")
     op.execute("DROP TYPE IF EXISTS steptypeenum")
 
@@ -36,7 +42,13 @@ def downgrade() -> None:
     op.execute("CREATE TYPE nodetypeenum AS ENUM ('local', 'remote')")
     op.execute("CREATE TYPE steptypeenum AS ENUM ('command', 'shell_script', 'python_script')")
     
-    # 2. 将字符串列改回枚举类型
+    # 2. 删除字符串默认值
+    op.execute("ALTER TABLE workflows ALTER COLUMN node_type DROP DEFAULT")
+    
+    # 3. 将字符串列改回枚举类型
     op.execute("ALTER TABLE workflows ALTER COLUMN node_type TYPE nodetypeenum USING node_type::nodetypeenum")
     op.execute("ALTER TABLE steps ALTER COLUMN step_type TYPE steptypeenum USING step_type::steptypeenum")
+    
+    # 4. 恢复枚举类型的默认值
+    op.execute("ALTER TABLE workflows ALTER COLUMN node_type SET DEFAULT 'local'::nodetypeenum")
 

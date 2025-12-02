@@ -49,7 +49,7 @@ services:
     env_file:
       - ./frontend/.env.local
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       # 使用相对路径，通过 nginx 代理访问 API
       - NEXT_PUBLIC_API_URL=
       # 服务端在 Docker 容器内，可以使用内部网络名称
@@ -62,7 +62,7 @@ services:
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-secret-key-change-in-production-please-use-a-strong-random-secret}
     depends_on:
       - backend
-    command: npm run dev
+    command: npm start
     networks:
       - quickdeck-network
 

@@ -33,7 +33,7 @@ import {
   CaretRightOutlined,
   CaretDownOutlined,
 } from "@ant-design/icons";
-import { jobApi, projectApi, credentialApi, type Job, type Project, type JobDetail, type OptionResponse, type Credential } from "@/lib/api";
+import { jobApi, projectApi, credentialApi, uploadApi, type Job, type Project, type JobDetail, type OptionResponse, type Credential } from "@/lib/api";
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -585,30 +585,9 @@ export default function Dashboard() {
   // 自定义上传函数
   const handleUpload = async (options: any) => {
     const { onSuccess, onError, file, onProgress } = options;
-    const formData = new FormData();
-    formData.append('file', file);
 
     try {
-      const accessToken = (session as any)?.accessToken;
-      if (!accessToken) {
-        throw new Error('未找到认证令牌');
-      }
-
-      const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/backend/g, 'localhost');
-      
-      const response = await fetch(`${apiUrl}/api/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`上传失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await uploadApi.upload(file);
       onSuccess(result, file);
     } catch (error) {
       console.error('文件上传错误:', error);

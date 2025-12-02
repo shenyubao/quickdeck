@@ -11,9 +11,12 @@ RUN npm install
 # 复制应用代码
 COPY . .
 
+# 构建生产版本
+RUN npm run build
+
 # 暴露端口
 EXPOSE 3000
 
-# 启动开发服务器
-CMD ["npm", "run", "dev"]
+# 启动生产服务器
+CMD ["npm", "start"]
 

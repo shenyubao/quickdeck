@@ -11,14 +11,17 @@ const getApiUrl = () => {
   }
   
   if (typeof window !== "undefined") {
-    // 客户端（浏览器）：如果环境变量包含 backend，替换为 localhost
-    if (envUrl.includes("backend")) {
-      return envUrl.replace(/backend/g, "localhost");
-    }
+    // 客户端（浏览器）：直接使用环境变量，不进行替换
+    // 生产环境应该通过 nginx 代理，使用相对路径（空字符串）
+    // 开发环境可以设置完整的 URL
     return envUrl;
   }
   
   // 服务端：可以使用 Docker 内部网络名称
+  // 如果环境变量包含 localhost，在服务端替换为 backend（Docker 内部网络）
+  if (envUrl.includes("localhost")) {
+    return envUrl.replace(/localhost/g, "backend");
+  }
   return envUrl;
 };
 

@@ -30,10 +30,10 @@ install:
 	cd frontend && npm install
 
 dev:
-	docker-compose up --build --progress=plain
+	docker-compose up --build 
 
 build:
-	docker-compose build --progress=plain
+	docker-compose build 
 
 up:
 	docker-compose up -d

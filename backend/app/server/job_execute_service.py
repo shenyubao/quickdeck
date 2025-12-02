@@ -120,10 +120,10 @@ class JobExecuteService:
             for step in steps:
                 # 更新上下文中的步骤信息
                 context["step_extension"] = step.extension or {}
-                context["step_type"] = step.step_type.value
+                context["step_type"] = step.step_type
                 
                 # 获取执行器
-                executor = ExecutorFactory.get_executor(step.step_type.value)
+                executor = ExecutorFactory.get_executor(step.step_type)
                 
                 # 执行步骤（使用处理后的参数，文件路径已替换）
                 context, result = executor.execute(

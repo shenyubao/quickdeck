@@ -106,7 +106,7 @@ async def get_job_detail(
             "name": workflow.name,
             "timeout": timeout_minutes,
             "retry": workflow.retry,
-            "node_type": workflow.node_type.value,
+            "node_type": workflow.node_type,
             "schedule_enabled": workflow.schedule_enabled,
             "schedule_crontab": workflow.schedule_crontab,
             "schedule_timezone": workflow.schedule_timezone,
@@ -128,7 +128,7 @@ async def get_job_detail(
                 {
                     "id": step.id,
                     "order": step.order,
-                    "step_type": step.step_type.value,
+                    "step_type": step.step_type,
                     "extension": step.extension,
                 }
                 for step in workflow.steps
@@ -210,13 +210,22 @@ async def create_job(
                 for n in workflow_data.notifications
             ]
         
+        # 验证 node_type
+        node_type_str = workflow_data.node_type.lower() if workflow_data.node_type else None
+        if not node_type_str:
+            raise ValueError(f"node_type 不能为空")
+        try:
+            NodeTypeEnum(node_type_str)
+        except ValueError:
+            raise ValueError(f"无效的 node_type: {workflow_data.node_type}，支持的值: {[e.value for e in NodeTypeEnum]}")
+        
         # 创建工作流
         workflow = Workflow(
             name=workflow_data.name,
             job_id=job.id,
             timeout=timeout_seconds,
             retry=workflow_data.retry,
-            node_type=NodeTypeEnum(workflow_data.node_type),
+            node_type=node_type_str,
             schedule_enabled=workflow_data.schedule_enabled,
             schedule_crontab=workflow_data.schedule_crontab,
             schedule_timezone=workflow_data.schedule_timezone,
@@ -252,10 +261,19 @@ async def create_job(
         
         # 创建步骤
         for step_data in workflow_data.steps:
+            # 验证 step_type
+            step_type_str = step_data.step_type.lower() if step_data.step_type else None
+            if not step_type_str:
+                raise ValueError(f"step_type 不能为空")
+            try:
+                StepTypeEnum(step_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 step_type: {step_data.step_type}，支持的值: {[e.value for e in StepTypeEnum]}")
+            
             step = Step(
                 workflow_id=workflow.id,
                 order=step_data.order,
-                step_type=StepTypeEnum(step_data.step_type),
+                step_type=step_type_str,
                 extension=step_data.extension
             )
             db.add(step)
@@ -320,11 +338,20 @@ async def update_job(
         workflow = db.query(Workflow).filter(Workflow.job_id == job.id).first()
         
         if workflow:
+            # 验证 node_type
+            node_type_str = workflow_data.node_type.lower() if workflow_data.node_type else None
+            if not node_type_str:
+                raise ValueError(f"node_type 不能为空")
+            try:
+                NodeTypeEnum(node_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 node_type: {workflow_data.node_type}，支持的值: {[e.value for e in NodeTypeEnum]}")
+            
             # 更新现有工作流
             workflow.name = workflow_data.name
             workflow.timeout = timeout_seconds
             workflow.retry = workflow_data.retry
-            workflow.node_type = NodeTypeEnum(workflow_data.node_type)
+            workflow.node_type = node_type_str
             workflow.schedule_enabled = workflow_data.schedule_enabled
             workflow.schedule_crontab = workflow_data.schedule_crontab
             workflow.schedule_timezone = workflow_data.schedule_timezone
@@ -334,13 +361,22 @@ async def update_job(
             db.query(Option).filter(Option.workflow_id == workflow.id).delete()
             db.query(Step).filter(Step.workflow_id == workflow.id).delete()
         else:
+            # 验证 node_type
+            node_type_str = workflow_data.node_type.lower() if workflow_data.node_type else None
+            if not node_type_str:
+                raise ValueError(f"node_type 不能为空")
+            try:
+                NodeTypeEnum(node_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 node_type: {workflow_data.node_type}，支持的值: {[e.value for e in NodeTypeEnum]}")
+            
             # 创建新工作流
             workflow = Workflow(
                 name=workflow_data.name,
                 job_id=job.id,
                 timeout=timeout_seconds,
                 retry=workflow_data.retry,
-                node_type=NodeTypeEnum(workflow_data.node_type),
+                node_type=node_type_str,
                 schedule_enabled=workflow_data.schedule_enabled,
                 schedule_crontab=workflow_data.schedule_crontab,
                 schedule_timezone=workflow_data.schedule_timezone,
@@ -376,10 +412,19 @@ async def update_job(
         
         # 创建步骤
         for step_data in workflow_data.steps:
+            # 验证 step_type
+            step_type_str = step_data.step_type.lower() if step_data.step_type else None
+            if not step_type_str:
+                raise ValueError(f"step_type 不能为空")
+            try:
+                StepTypeEnum(step_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 step_type: {step_data.step_type}，支持的值: {[e.value for e in StepTypeEnum]}")
+            
             step = Step(
                 workflow_id=workflow.id,
                 order=step_data.order,
-                step_type=StepTypeEnum(step_data.step_type),
+                step_type=step_type_str,
                 extension=step_data.extension
             )
             db.add(step)

@@ -9,7 +9,6 @@ from sqlalchemy import (
     Text,
     JSON,
     Table,
-    Enum as SQLEnum,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -166,7 +165,7 @@ class Workflow(BaseModel):
     schedule_timezone = Column(String, default="UTC", comment="时区")
     
     # NodeFilter 属性（节点过滤配置）
-    node_type = Column(SQLEnum(NodeTypeEnum), nullable=False, default=NodeTypeEnum.LOCAL, comment="节点类型")
+    node_type = Column(String, nullable=False, default=NodeTypeEnum.LOCAL.value, comment="节点类型")
     node_filter_expression = Column(Text, comment="节点过滤表达式")
     node_exclude_expression = Column(Text, comment="节点排除表达式")
     
@@ -207,7 +206,7 @@ class Step(BaseModel):
     
     workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, comment="所属工作流")
     order = Column(Integer, nullable=False, comment="步骤顺序")
-    step_type = Column(SQLEnum(StepTypeEnum), nullable=False, comment="步骤类型")
+    step_type = Column(String, nullable=False, comment="步骤类型")
     extension = Column(JSON, comment="扩展配置（每种类型有自己的定义）")
     
     # 关系

@@ -143,9 +143,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.add_middleware(LoggingMiddleware)
 
 # CORS 配置
+# 通过 nginx 代理后，前后端在同一域下，但仍需要允许来自前端的直接请求（开发环境）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://frontend:3000"],
+    allow_origins=[
+        "http://localhost:3000",  # 开发环境：前端直接访问
+        "http://frontend:3000",    # Docker 内部网络
+        "http://localhost",        # 生产环境：通过 nginx 访问
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

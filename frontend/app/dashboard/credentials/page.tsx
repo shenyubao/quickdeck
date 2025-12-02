@@ -353,7 +353,7 @@ export default function CredentialsPage() {
         {/* 表格 */}
         {currentProject ? (
           <Table
-            columns={columns}
+            columns={columns as any}
             dataSource={credentials}
             rowKey="id"
             loading={loading}

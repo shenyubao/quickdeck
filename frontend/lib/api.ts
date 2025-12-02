@@ -1,20 +1,25 @@
 import { getSession, signOut } from "next-auth/react";
 
-// 在浏览器环境中，API URL 必须是 localhost，而不是 Docker 内部网络名称
-// 因为浏览器无法解析 Docker 内部主机名（如 backend）
+// 获取 API URL
+// 如果 NEXT_PUBLIC_API_URL 为空或未设置，使用相对路径（通过 nginx 代理）
 const getApiUrl = () => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  
+  // 如果环境变量为空或未设置，使用相对路径（通过 nginx 代理）
+  if (!envUrl || envUrl.trim() === "") {
+    return "";
+  }
+  
   if (typeof window !== "undefined") {
-    // 客户端（浏览器）：强制使用 localhost
-    // 即使环境变量设置了 backend:8000，在浏览器中也必须使用 localhost
-    const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (envUrl && envUrl.includes("backend")) {
-      // 如果环境变量包含 backend，替换为 localhost
+    // 客户端（浏览器）：如果环境变量包含 backend，替换为 localhost
+    if (envUrl.includes("backend")) {
       return envUrl.replace(/backend/g, "localhost");
     }
-    return envUrl || "http://localhost:8000";
+    return envUrl;
   }
-  // 服务端：可以使用 Docker 内部网络名称 
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  
+  // 服务端：可以使用 Docker 内部网络名称
+  return envUrl;
 };
 
 // 使用函数而不是直接赋值，确保在运行时获取正确的 URL

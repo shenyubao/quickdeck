@@ -9,12 +9,20 @@ const getServerApiUrl = () => {
   if (process.env.API_URL) {
     return process.env.API_URL;
   }
-  // 如果在 Docker 环境中（有 NEXT_PUBLIC_API_URL 且包含 localhost），使用 backend
+  
   const publicUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (publicUrl && publicUrl.includes("localhost")) {
+  
+  // 如果 NEXT_PUBLIC_API_URL 为空（通过 nginx 代理），服务端使用 Docker 内部网络
+  if (!publicUrl || publicUrl.trim() === "") {
+    return "http://backend:8000";
+  }
+  
+  // 如果在 Docker 环境中（有 NEXT_PUBLIC_API_URL 且包含 localhost），使用 backend
+  if (publicUrl.includes("localhost")) {
     // 服务端在 Docker 容器内，使用内部网络名称
     return publicUrl.replace("localhost", "backend");
   }
+  
   return publicUrl || "http://localhost:8000";
 };
 
@@ -27,6 +35,7 @@ if (!AUTH_SECRET) {
 
 export const authConfig = {
   secret: AUTH_SECRET,
+  trustHost: true, // 允许反向代理（nginx）
   providers: [
     Credentials({
       name: "credentials",
@@ -142,12 +151,25 @@ export const authConfig = {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const isOnDashboard = nextUrl.pathname.startsWith("/dashboard");
+      const isOnAuthPage = nextUrl.pathname.startsWith("/auth");
+      const isOnRoot = nextUrl.pathname === "/";
+      
+      // 访问仪表板需要登录
       if (isOnDashboard) {
         if (isLoggedIn) return true;
         return false; // 重定向到登录页
-      } else if (isLoggedIn && nextUrl.pathname === "/") {
-        return Response.redirect(new URL("/dashboard", nextUrl));
       }
+      
+      // 访问根路径：已登录跳转到仪表板，未登录跳转到登录页
+      if (isOnRoot) {
+        if (isLoggedIn) {
+          return Response.redirect(new URL("/dashboard", nextUrl));
+        } else {
+          return Response.redirect(new URL("/auth/signin", nextUrl));
+        }
+      }
+      
+      // 其他页面（如登录页）允许访问
       return true;
     },
   },

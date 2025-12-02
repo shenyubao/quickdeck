@@ -24,7 +24,7 @@ def upgrade() -> None:
     op.execute("CREATE TYPE outputtypeenum AS ENUM ('text', 'table')")
     
     # 添加 output_type 字段到 workflows 表
-    op.add_column('workflows', sa.Column('output_type', postgresql.ENUM('text', 'table', name='outputtypeenum', create_type=False), nullable=True, server_default="'text'", comment='输出类型（text/table）'))
+    op.add_column('workflows', sa.Column('output_type', postgresql.ENUM('text', 'table', name='outputtypeenum', create_type=False), nullable=True, server_default="text", comment='输出类型（text/table）'))
     
     # 对于现有数据，设置默认值为 text
     op.execute("UPDATE workflows SET output_type = 'text' WHERE output_type IS NULL")

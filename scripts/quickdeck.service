@@ -1,0 +1,17 @@
+[Unit]
+Description=QuickDeck Application Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/path/to/quickdeck
+ExecStart=/path/to/quickdeck/scripts/start-server.sh start
+ExecStop=/path/to/quickdeck/scripts/start-server.sh stop
+ExecReload=/path/to/quickdeck/scripts/start-server.sh restart
+User=root
+
+[Install]
+WantedBy=multi-user.target
+

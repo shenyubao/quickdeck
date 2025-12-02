@@ -6,7 +6,7 @@ import logging
 from app.database import get_db
 from app.models import (
     Job, Project, User, Workflow, Option, Step,
-    OptionTypeEnum, InputTypeEnum, StepTypeEnum, NodeTypeEnum
+    OptionTypeEnum, StepTypeEnum, NodeTypeEnum, ExecutionTypeEnum
 )
 from app.schemas import JobCreate, JobUpdate, JobResponse, JobDetailResponse, JobRunRequest, JobRunResponse, ScriptTestRequest, ScriptTestResponse
 from app.routers.auth import get_current_user
@@ -74,7 +74,8 @@ async def get_job_detail(
     """获取任务详情（包含工作流信息）"""
     job = db.query(Job).options(
         joinedload(Job.workflow).joinedload(Workflow.options),
-        joinedload(Job.workflow).joinedload(Workflow.steps)
+        joinedload(Job.workflow).joinedload(Workflow.steps),
+        joinedload(Job.owner)
     ).filter(
         Job.id == job_id,
         Job.owner_id == current_user.id
@@ -113,14 +114,13 @@ async def get_job_detail(
             "options": [
                 {
                     "id": opt.id,
-                    "option_type": opt.option_type.value,
+                    "option_type": opt.option_type,
                     "name": opt.name,
-                    "label": opt.label,
+                    "display_name": opt.display_name,
                     "description": opt.description,
                     "default_value": opt.default_value,
-                    "input_type": opt.input_type.value,
                     "required": opt.required,
-                    "multi_valued": opt.multi_valued,
+                    "credential_type": opt.credential_type,
                 }
                 for opt in workflow.options
             ],
@@ -135,12 +135,22 @@ async def get_job_detail(
             ],
         }
     
+    # 获取负责人信息
+    owner_info = None
+    if job.owner:
+        owner_info = {
+            "id": job.owner.id,
+            "username": job.owner.username,
+            "nickname": job.owner.nickname,
+        }
+    
     return {
         "id": job.id,
         "name": job.name,
         "path": job.path,
         "description": job.description,
         "owner_id": job.owner_id,
+        "owner": owner_info,
         "project_id": job.project_id,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
@@ -218,16 +228,25 @@ async def create_job(
         
         # 创建选项（参数）
         for option_data in workflow_data.options:
+            # 确保 option_type 是小写（兼容前端可能发送的大写值）
+            option_type_str = option_data.option_type.lower() if option_data.option_type else None
+            if not option_type_str:
+                raise ValueError(f"option_type 不能为空")
+            # 使用枚举验证值是否有效
+            try:
+                OptionTypeEnum(option_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 option_type: {option_data.option_type}，支持的值: {[e.value for e in OptionTypeEnum]}")
+            # 存储字符串值（不再是枚举类型）
             option = Option(
                 workflow_id=workflow.id,
-                option_type=OptionTypeEnum(option_data.option_type),
+                option_type=option_type_str,
                 name=option_data.name,
-                label=option_data.label,
+                display_name=option_data.display_name,
                 description=option_data.description,
                 default_value=option_data.default_value,
-                input_type=InputTypeEnum(option_data.input_type),
                 required=option_data.required,
-                multi_valued=option_data.multi_valued
+                credential_type=option_data.credential_type
             )
             db.add(option)
         
@@ -333,16 +352,25 @@ async def update_job(
         
         # 创建选项（参数）
         for option_data in workflow_data.options:
+            # 确保 option_type 是小写（兼容前端可能发送的大写值）
+            option_type_str = option_data.option_type.lower() if option_data.option_type else None
+            if not option_type_str:
+                raise ValueError(f"option_type 不能为空")
+            # 使用枚举验证值是否有效
+            try:
+                OptionTypeEnum(option_type_str)
+            except ValueError:
+                raise ValueError(f"无效的 option_type: {option_data.option_type}，支持的值: {[e.value for e in OptionTypeEnum]}")
+            # 存储字符串值（不再是枚举类型）
             option = Option(
                 workflow_id=workflow.id,
-                option_type=OptionTypeEnum(option_data.option_type),
+                option_type=option_type_str,
                 name=option_data.name,
-                label=option_data.label,
+                display_name=option_data.display_name,
                 description=option_data.description,
                 default_value=option_data.default_value,
-                input_type=InputTypeEnum(option_data.input_type),
                 required=option_data.required,
-                multi_valued=option_data.multi_valued
+                credential_type=option_data.credential_type
             )
             db.add(option)
         
@@ -449,7 +477,9 @@ async def run_job(
         job=job,
         workflow=workflow,
         args=run_request.args or {},
-        user_id=current_user.id
+        user_id=current_user.id,
+        db=db,
+        execution_type=ExecutionTypeEnum.MANUAL
     )
 
 

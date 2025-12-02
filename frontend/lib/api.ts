@@ -89,6 +89,11 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorMessage = "认证失败，请重新登录";
     }
     
+    // 如果是 413 Payload Too Large，提示用户数据太大
+    if (response.status === 413) {
+      errorMessage = "数据太大，超过了 100MB 的限制。请减少数据量后重试。";
+    }
+    
     throw new Error(errorMessage);
   }
 
@@ -137,14 +142,13 @@ export interface Job {
 
 // Option 相关类型
 export interface OptionCreate {
-  option_type: "text" | "file";
+  option_type: "text" | "date" | "number" | "file" | "credential";
   name: string;
-  label?: string;
+  display_name?: string;
   description?: string;
   default_value?: string;
-  input_type?: "plain_text" | "date" | "number";
   required?: boolean;
-  multi_valued?: boolean;
+  credential_type?: string; // 凭证类型（当option_type为credential时使用）
 }
 
 // Step 相关类型
@@ -164,14 +168,13 @@ export interface NotificationCreate {
 // Option 响应类型
 export interface OptionResponse {
   id: number;
-  option_type: "text" | "file";
+  option_type: "text" | "date" | "number" | "file" | "credential";
   name: string;
-  label?: string;
+  display_name?: string;
   description?: string;
   default_value?: string;
-  input_type: "plain_text" | "date" | "number";
   required: boolean;
-  multi_valued: boolean;
+  credential_type?: string; // 凭证类型（当option_type为credential时使用）
 }
 
 // Step 响应类型
@@ -232,12 +235,19 @@ export interface JobUpdate {
   workflow?: WorkflowCreate;
 }
 
+export interface OwnerInfo {
+  id: number;
+  username: string;
+  nickname?: string;
+}
+
 export interface JobDetail {
   id: number;
   name: string;
   path: string;
   description?: string;
   owner_id: number;
+  owner?: OwnerInfo;
   project_id: number;
   created_at: string;
   updated_at?: string;
@@ -374,6 +384,103 @@ export const jobApi = {
   },
 };
 
+// 执行记录相关类型
+export interface JobExecution {
+  id: number;
+  job_id: number;
+  user_id: number;
+  execution_type: "manual" | "scheduled";
+  status: "success" | "failure";
+  args?: Record<string, any>;
+  output_text?: string;
+  error_message?: string;
+  executed_at: string;
+  created_at: string;
+  updated_at?: string;
+  job_name?: string;
+  user_username?: string;
+  user_nickname?: string;
+}
+
+// 凭证相关类型
+export interface Credential {
+  id: number;
+  project_id: number;
+  credential_type: "mysql" | "oss" | "deepseek";
+  name: string;
+  description?: string;
+  config: Record<string, any>;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface CredentialCreate {
+  credential_type: "mysql" | "oss" | "deepseek";
+  name: string;
+  description?: string;
+  config: Record<string, any>;
+}
+
+export interface CredentialUpdate {
+  credential_type?: "mysql" | "oss" | "deepseek";
+  name?: string;
+  description?: string;
+  config?: Record<string, any>;
+}
+
+export const executionApi = {
+  /**
+   * 获取执行记录列表
+   */
+  async getAll(params?: {
+    job_id?: number;
+    status?: "success" | "failure";
+    execution_type?: "manual" | "scheduled";
+    limit?: number;
+    offset?: number;
+  }): Promise<JobExecution[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const queryParams = new URLSearchParams();
+    
+    if (params?.job_id) {
+      queryParams.append("job_id", params.job_id.toString());
+    }
+    if (params?.status) {
+      queryParams.append("status_filter", params.status);
+    }
+    if (params?.execution_type) {
+      queryParams.append("execution_type", params.execution_type);
+    }
+    if (params?.limit) {
+      queryParams.append("limit", params.limit.toString());
+    }
+    if (params?.offset) {
+      queryParams.append("offset", params.offset.toString());
+    }
+    
+    const url = `${apiUrl}/api/executions${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<JobExecution[]>(response);
+  },
+
+  /**
+   * 获取单个执行记录详情
+   */
+  async getById(id: number): Promise<JobExecution> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/executions/${id}`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<JobExecution>(response);
+  },
+};
+
 export const projectApi = {
   /**
    * 获取所有项目
@@ -459,6 +566,86 @@ export const projectApi = {
     const headers = await getAuthHeaders();
     const apiUrl = getApiUrlValue();
     const response = await fetch(`${apiUrl}/api/projects/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    return handleResponse<void>(response);
+  },
+};
+
+/**
+ * 凭证相关 API
+ */
+export const credentialApi = {
+  /**
+   * 获取凭证列表
+   */
+  async getAll(params?: { project_id?: number; credential_type?: string }): Promise<Credential[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const queryParams = new URLSearchParams();
+    if (params?.project_id) {
+      queryParams.append("project_id", params.project_id.toString());
+    }
+    if (params?.credential_type) {
+      queryParams.append("credential_type", params.credential_type);
+    }
+    const url = `${apiUrl}/api/credentials${queryParams.toString() ? `?${queryParams.toString()}` : ""}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<Credential[]>(response);
+  },
+
+  /**
+   * 获取单个凭证
+   */
+  async getById(id: number): Promise<Credential> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/credentials/${id}`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<Credential>(response);
+  },
+
+  /**
+   * 创建凭证
+   */
+  async create(projectId: number, data: CredentialCreate): Promise<Credential> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/credentials?project_id=${projectId}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Credential>(response);
+  },
+
+  /**
+   * 更新凭证
+   */
+  async update(id: number, data: CredentialUpdate): Promise<Credential> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/credentials/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<Credential>(response);
+  },
+
+  /**
+   * 删除凭证
+   */
+  async delete(id: number): Promise<void> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/credentials/${id}`, {
       method: "DELETE",
       headers,
     });

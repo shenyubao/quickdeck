@@ -68,22 +68,18 @@ migrate-create: wait-for-db
 		exit 1; \
 	fi
 	@echo "检查依赖..."
-	cd backend && poetry install --no-interaction --no-ansi || true
 	cd backend && poetry run alembic revision --autogenerate -m "$(MESSAGE)"
 
 migrate-upgrade: wait-for-db
 	@echo "检查依赖..."
-	cd backend && poetry install --no-interaction --no-ansi || true
 	cd backend && poetry run alembic upgrade head
 
 migrate-downgrade: wait-for-db
 	@echo "检查依赖..."
-	cd backend && poetry install --no-interaction --no-ansi || true
 	cd backend && poetry run alembic downgrade -1
 
 migrate: wait-for-db
 	@echo "检查依赖..."
-	cd backend && poetry install --no-interaction --no-ansi || true
 	cd backend && poetry run alembic current
 	cd backend && poetry run alembic history
 

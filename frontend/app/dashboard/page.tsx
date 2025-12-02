@@ -19,6 +19,8 @@ import {
   DatePicker,
   InputNumber,
   Upload,
+  Tabs,
+  Select,
 } from "antd";
 import type { TreeDataNode, MenuProps } from "antd";
 import {
@@ -30,10 +32,11 @@ import {
   CaretRightOutlined,
   CaretDownOutlined,
 } from "@ant-design/icons";
-import { jobApi, projectApi, type Job, type Project, type JobDetail, type OptionResponse } from "@/lib/api";
+import { jobApi, projectApi, credentialApi, type Job, type Project, type JobDetail, type OptionResponse, type Credential } from "@/lib/api";
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
+const { Option } = Select;
 
 interface TreeNode extends TreeDataNode {
   key: string;
@@ -54,11 +57,14 @@ export default function Dashboard() {
   const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [jobResultHtml, setJobResultHtml] = useState<string>("");
+  const [jobResult, setJobResult] = useState<{ text?: string; dataset?: any } | null>(null);
+  const [jobLogs, setJobLogs] = useState<string>("");
   const [expandedKeys, setExpandedKeysState] = useState<React.Key[]>([]);
   const [isJobModalOpen, setIsJobModalOpen] = useState(false);
   const [runForm] = Form.useForm();
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
 
   // 获取所有节点的 keys（用于展开全部）
   const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
@@ -239,11 +245,6 @@ export default function Dashboard() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <CaretRightOutlined style={{ color: "#52c41a", fontSize: 12 }} />
             <span>{job.name}</span>
-            {job.description && (
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                负责人: {job.description}
-              </Text>
-            )}
           </div>
         ),
         isLeaf: true,
@@ -282,26 +283,41 @@ export default function Dashboard() {
           const initialValues: Record<string, any> = {};
           detail.workflow.options.forEach((option) => {
             if (option.default_value !== null && option.default_value !== undefined && option.default_value !== "") {
-              if (option.multi_valued && option.input_type === "number") {
-                // 多值数字，尝试解析为数组
-                try {
-                  initialValues[option.name] = JSON.parse(option.default_value);
-                } catch {
-                  initialValues[option.name] = [option.default_value];
-                }
-              } else if (option.multi_valued) {
-                // 多值文本，尝试解析为数组或分割字符串
-                try {
-                  initialValues[option.name] = JSON.parse(option.default_value);
-                } catch {
-                  initialValues[option.name] = option.default_value.split(",").map((s: string) => s.trim());
-                }
-              } else {
-                initialValues[option.name] = option.default_value;
-              }
+              initialValues[option.name] = option.default_value;
             }
           });
           runForm.setFieldsValue(initialValues);
+          
+          // 加载凭证列表（如果有凭证类型的参数）
+          if (currentProject) {
+            const credentialTypes = new Set<string>();
+            detail.workflow.options.forEach((option) => {
+              if (option.option_type === "credential" && option.credential_type) {
+                credentialTypes.add(option.credential_type);
+              }
+            });
+            
+            // 加载所有需要的凭证类型
+            const loadCredentials = async () => {
+              const newCredentialsMap: Record<string, Credential[]> = {};
+              for (const type of credentialTypes) {
+                try {
+                  const creds = await credentialApi.getAll({
+                    project_id: currentProject.id,
+                    credential_type: type,
+                  });
+                  newCredentialsMap[type] = creds;
+                } catch (error) {
+                  console.error(`加载${type}凭证失败:`, error);
+                  newCredentialsMap[type] = [];
+                }
+              }
+              setCredentialsMap(newCredentialsMap);
+            };
+            if (credentialTypes.size > 0) {
+              loadCredentials();
+            }
+          }
         }
       } catch (error) {
         message.error(error instanceof Error ? error.message : "获取任务详情失败");
@@ -523,6 +539,8 @@ export default function Dashboard() {
       setRunning(true);
       setRunError(null);
       setJobResultHtml("");
+      setJobResult(null);
+      setJobLogs("");
 
       // 调用运行任务的 API
       const result = await jobApi.run(selectedJob.id, Object.keys(args).length > 0 ? args : undefined);
@@ -531,10 +549,21 @@ export default function Dashboard() {
       if (result.error) {
         setRunError(result.error);
         setJobResultHtml("");
+        setJobResult(null);
+        setJobLogs("");
       } else {
         setRunError(null);
         // 后端返回的是 HTML 格式的 output
         setJobResultHtml(result.output || "");
+        // 保存 result 对象（包含 text、dataset 和 logs）
+        if (result.result) {
+          setJobResult(result.result);
+          // 使用 logs 字段作为执行日志
+          setJobLogs(result.result.logs || "");
+        } else {
+          setJobResult(null);
+          setJobLogs("");
+        }
       }
       
       message.success("任务运行完成");
@@ -553,43 +582,53 @@ export default function Dashboard() {
 
   // 根据参数类型渲染输入组件
   const renderOptionInput = (option: OptionResponse) => {
-    const { name, input_type, required, multi_valued, option_type } = option;
+    const { option_type, credential_type } = option;
     
-    if (option_type === "file") {
-      return (
-        <Upload>
-          <Button>选择文件</Button>
-        </Upload>
-      );
-    }
-
-    if (multi_valued) {
-      // 多值输入
-      if (input_type === "number") {
-        return (
-          <Input.TextArea
-            rows={3}
-            placeholder={`输入多个数字，用逗号分隔，例如: 1, 2, 3`}
-          />
-        );
-      } else {
-        return (
-          <Input.TextArea
-            rows={3}
-            placeholder={`输入多个值，用逗号分隔，例如: 值1, 值2, 值3`}
-          />
-        );
-      }
-    }
-
-    switch (input_type) {
+    switch (option_type) {
       case "date":
         return <DatePicker style={{ width: "100%" }} />;
       case "number":
         return <InputNumber style={{ width: "100%" }} />;
-      case "plain_text":
+      case "file":
+        return (
+          <Upload>
+            <Button>选择文件</Button>
+          </Upload>
+        );
+      case "credential":
+        // 凭证类型参数，需要根据凭证类型过滤
+        const credentials = credentialsMap[credential_type || ""] || [];
+        return (
+          <Select
+            placeholder={`请选择${getCredentialTypeName(credential_type)}`}
+            style={{ width: "100%" }}
+            showSearch
+            optionFilterProp="label"
+          >
+            {credentials.map((cred) => (
+              <Option key={cred.id} value={cred.id} label={cred.name}>
+                {cred.name} {cred.description ? `(${cred.description})` : ""}
+              </Option>
+            ))}
+          </Select>
+        );
+      case "text":
       default:
-        return <Input placeholder={`请输入${option.label || option.name}`} />;
+        return <Input placeholder={`请输入${option.display_name || option.name}`} />;
+    }
+  };
+
+  // 获取凭证类型显示名称
+  const getCredentialTypeName = (type?: string) => {
+    switch (type) {
+      case "mysql":
+        return "MySQL凭证";
+      case "oss":
+        return "OSS凭证";
+      case "deepseek":
+        return "DeepSeek凭证";
+      default:
+        return "凭证";
     }
   };
 
@@ -789,24 +828,34 @@ export default function Dashboard() {
           ) : selectedJob ? (
             <Spin spinning={loadingDetail}>
               <div>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 16,
-                  }}
-                >
-                  <Title level={5} style={{ margin: 0 }}>
-                    {selectedJob.name}
-                  </Title>
-                  <Dropdown
-                    menu={{ items: jobMenuItems }}
-                    trigger={["click"]}
-                    placement="bottomRight"
+                <div style={{ marginBottom: 16 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 8,
+                    }}
                   >
-                    <Button icon={<MoreOutlined />}>更多</Button>
-                  </Dropdown>
+                    <Title level={5} style={{ margin: 0 }}>
+                      {selectedJob.name}
+                    </Title>
+                    <Dropdown
+                      menu={{ items: jobMenuItems }}
+                      trigger={["click"]}
+                      placement="bottomRight"
+                    >
+                      <Button icon={<MoreOutlined />}>更多</Button>
+                    </Dropdown>
+                  </div>
+                  {/* 显示负责人信息 */}
+                  {jobDetail?.owner && (
+                    <div style={{ marginTop: 4 }}>
+                      <Text type="secondary" style={{ fontSize: "14px" }}>
+                        负责人: {jobDetail.owner.nickname || jobDetail.owner.username}
+                      </Text>
+                    </div>
+                  )}
                 </div>
                 {selectedJob.description && (
                   <div style={{ marginBottom: 16 }}>
@@ -820,7 +869,7 @@ export default function Dashboard() {
                   {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
                     <>
                       <Title level={5} style={{ marginBottom: 16 }}>
-                        参数配置
+                        运行参数
                       </Title>
                     </>
                   ) : (
@@ -837,7 +886,7 @@ export default function Dashboard() {
                         name={option.name}
                         label={
                           <div>
-                            <Text strong>{option.label || option.name}</Text>
+                            <Text strong>{option.display_name || option.name}</Text>
                             {option.required && (
                               <Text type="danger" style={{ marginLeft: 4 }}>
                                 *
@@ -849,70 +898,9 @@ export default function Dashboard() {
                         rules={[
                           {
                             required: option.required,
-                            message: `请输入${option.label || option.name}`,
+                            message: `请输入${option.display_name || option.name}`,
                           },
                         ]}
-                        getValueFromEvent={
-                          option.multi_valued
-                            ? (e: any) => {
-                                const value = e.target.value.trim();
-                                if (!value) return [];
-                                if (option.input_type === "number") {
-                                  return value
-                                    .split(",")
-                                    .map((s: string) => parseFloat(s.trim()))
-                                    .filter((n: number) => !isNaN(n));
-                                } else {
-                                  return value
-                                    .split(",")
-                                    .map((s: string) => s.trim())
-                                    .filter((s: string) => s);
-                                }
-                              }
-                            : undefined
-                        }
-                        normalize={
-                          option.multi_valued && option.input_type === "number"
-                            ? (value) => {
-                                // 如果已经是数组，直接返回
-                                if (Array.isArray(value)) return value;
-                                // 如果是字符串，尝试解析
-                                if (typeof value === "string") {
-                                  const parsed = value
-                                    .split(",")
-                                    .map((s) => parseFloat(s.trim()))
-                                    .filter((n) => !isNaN(n));
-                                  return parsed.length > 0 ? parsed : undefined;
-                                }
-                                return value;
-                              }
-                            : option.multi_valued
-                            ? (value) => {
-                                // 如果已经是数组，直接返回
-                                if (Array.isArray(value)) return value;
-                                // 如果是字符串，分割
-                                if (typeof value === "string") {
-                                  const parsed = value
-                                    .split(",")
-                                    .map((s) => s.trim())
-                                    .filter((s) => s);
-                                  return parsed.length > 0 ? parsed : undefined;
-                                }
-                                return value;
-                              }
-                            : undefined
-                        }
-                        getValueProps={
-                          option.multi_valued
-                            ? (value) => {
-                                // 将数组转换为逗号分隔的字符串用于显示
-                                if (Array.isArray(value)) {
-                                  return { value: value.join(", ") };
-                                }
-                                return { value: value || "" };
-                              }
-                            : undefined
-                        }
                       >
                         {renderOptionInput(option)}
                       </Form.Item>
@@ -967,17 +955,163 @@ export default function Dashboard() {
                     {runError}
                   </pre>
                 </div>
-              ) : jobResultHtml ? (
-                <div
-                  dangerouslySetInnerHTML={{ __html: jobResultHtml }}
-                  style={{
-                    padding: 16,
-                    background: "#fafafa",
-                    borderRadius: 4,
-                    border: "1px solid #f0f0f0",
-                    maxHeight: "600px",
-                    overflow: "auto",
-                  }}
+              ) : jobResultHtml || jobResult ? (
+                <Tabs
+                  defaultActiveKey="result"
+                  items={[
+                    {
+                      key: "result",
+                      label: "运行结果",
+                      children: jobResult?.text ? (
+                        <div
+                          style={{
+                            padding: 16,
+                            background: "#fafafa",
+                            borderRadius: 4,
+                            border: "1px solid #f0f0f0",
+                            maxHeight: "600px",
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          {jobResult.text}
+                        </div>
+                      ) : jobResultHtml ? (
+                        <div
+                          dangerouslySetInnerHTML={{ __html: jobResultHtml }}
+                          style={{
+                            padding: 16,
+                            background: "#fafafa",
+                            borderRadius: 4,
+                            border: "1px solid #f0f0f0",
+                            maxHeight: "600px",
+                            overflow: "auto",
+                          }}
+                        />
+                      ) : (
+                        <Empty
+                          description="暂无运行结果"
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          style={{ marginTop: 50 }}
+                        />
+                      ),
+                    },
+                    {
+                      key: "dataset",
+                      label: "数据详情",
+                      children: jobResult?.dataset !== null && jobResult?.dataset !== undefined ? (
+                        <div
+                          style={{
+                            padding: 16,
+                            background: "#fafafa",
+                            borderRadius: 4,
+                            border: "1px solid #f0f0f0",
+                            maxHeight: "600px",
+                            overflow: "auto",
+                          }}
+                        >
+                          {Array.isArray(jobResult.dataset) && jobResult.dataset.length > 0 && typeof jobResult.dataset[0] === "object" ? (
+                            // 如果是对象数组，渲染为表格
+                            <table
+                              style={{
+                                width: "100%",
+                                borderCollapse: "collapse",
+                                background: "#fff",
+                              }}
+                            >
+                              <thead>
+                                <tr style={{ background: "#f5f5f5" }}>
+                                  {Object.keys(jobResult.dataset[0]).map((key) => (
+                                    <th
+                                      key={key}
+                                      style={{
+                                        padding: "8px 12px",
+                                        textAlign: "left",
+                                        border: "1px solid #e8e8e8",
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      {key}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {jobResult.dataset.map((row: any, index: number) => (
+                                  <tr key={index}>
+                                    {Object.keys(jobResult.dataset[0]).map((key) => (
+                                      <td
+                                        key={key}
+                                        style={{
+                                          padding: "8px 12px",
+                                          border: "1px solid #e8e8e8",
+                                        }}
+                                      >
+                                        {typeof row[key] === "object"
+                                          ? JSON.stringify(row[key])
+                                          : String(row[key] ?? "")}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            // 其他情况，显示为 JSON
+                            <pre
+                              style={{
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-word",
+                                fontFamily: "monospace",
+                                margin: 0,
+                                background: "#fff",
+                                padding: 12,
+                                borderRadius: 4,
+                              }}
+                            >
+                              {JSON.stringify(jobResult.dataset, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      ) : (
+                        <Empty
+                          description="暂无数据详情"
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          style={{ marginTop: 50 }}
+                        />
+                      ),
+                    },
+                    {
+                      key: "logs",
+                      label: "执行日志",
+                      children: jobLogs ? (
+                        <div
+                          style={{
+                            padding: 16,
+                            background: "#fafafa",
+                            borderRadius: 4,
+                            border: "1px solid #f0f0f0",
+                            maxHeight: "600px",
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontFamily: "monospace",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {jobLogs}
+                        </div>
+                      ) : (
+                        <Empty
+                          description="暂无执行日志"
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          style={{ marginTop: 50 }}
+                        />
+                      ),
+                    },
+                  ]}
                 />
               ) : (
                 <Empty

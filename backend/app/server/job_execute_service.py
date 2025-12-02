@@ -1,5 +1,6 @@
-from typing import Dict, Any, Tuple
-from app.models import Job, Workflow
+from typing import Dict, Any, Tuple, Optional
+from sqlalchemy.orm import Session
+from app.models import Job, Workflow, JobExecution, ExecutionTypeEnum, ExecutionStatusEnum, Credential
 from app.executors.factory import ExecutorFactory
 from app.main import logger
 
@@ -12,7 +13,9 @@ class JobExecuteService:
         job: Job,
         workflow: Workflow,
         args: Dict[str, Any],
-        user_id: int
+        user_id: int,
+        db: Optional[Session] = None,
+        execution_type: ExecutionTypeEnum = ExecutionTypeEnum.MANUAL
     ) -> Dict[str, Any]:
         """
         执行任务
@@ -22,10 +25,32 @@ class JobExecuteService:
             workflow: 工作流对象
             args: 用户输入参数
             user_id: 用户ID
+            db: 数据库会话（用于记录执行记录）
+            execution_type: 执行方式（手动/定时任务）
             
         Returns:
             包含 output, result, error 的字典
         """
+        # 加载凭证信息（如果参数中包含凭证ID）
+        credentials_map = {}
+        if args:
+            # 获取所有凭证ID（从args中查找）
+            credential_ids = []
+            for key, value in args.items():
+                if isinstance(value, (int, str)) and str(value).isdigit():
+                    # 检查是否是凭证ID（需要根据工作流的选项来判断）
+                    for option in workflow.options:
+                        if option.name == key and option.option_type == "credential":
+                            credential_ids.append(int(value))
+            
+            # 批量加载凭证
+            if credential_ids:
+                credentials = db.query(Credential).filter(
+                    Credential.id.in_(credential_ids),
+                    Credential.project_id == job.project_id
+                ).all() if db else []
+                credentials_map = {cred.id: cred for cred in credentials}
+        
         # 初始化上下文和结果
         context = {
             "job_id": job.id,
@@ -33,13 +58,14 @@ class JobExecuteService:
             "user_id": user_id,
             "timeout": workflow.timeout,
             "retry": workflow.retry,
-            # 授权信息（待实现）
-            "auth": {},
+            "project_id": job.project_id,
+            "credentials_map": credentials_map,  # 凭证映射
         }
         
         result = {
             "text": "",
             "dataset": None,
+            "logs": "",
         }
         
         # 按顺序执行步骤
@@ -71,6 +97,22 @@ class JobExecuteService:
                 text = result.get("text", "")
                 html = JobExecuteService._generate_text_html(text)
             
+            # 记录执行记录（成功）
+            if db:
+                output_text = result.get("text", "")
+                # 确保使用枚举的值（字符串）而不是枚举对象
+                execution = JobExecution(
+                    job_id=job.id,
+                    user_id=user_id,
+                    execution_type=execution_type.value,
+                    status=ExecutionStatusEnum.SUCCESS.value,
+                    args=args or {},
+                    output_text=output_text,
+                    error_message=None
+                )
+                db.add(execution)
+                db.commit()
+            
             return {
                 "output": html,
                 "result": result,
@@ -81,6 +123,23 @@ class JobExecuteService:
             logger.error(f"任务执行失败: job_id={job.id}, error={error_message}", exc_info=True)
             
             html = JobExecuteService._generate_error_html(error_message)
+            
+            # 记录执行记录（失败）
+            if db:
+                output_text = result.get("text", "")
+                # 确保使用枚举的值（字符串）而不是枚举对象
+                execution = JobExecution(
+                    job_id=job.id,
+                    user_id=user_id,
+                    execution_type=execution_type.value,
+                    status=ExecutionStatusEnum.FAILURE.value,
+                    args=args or {},
+                    output_text=output_text,
+                    error_message=error_message
+                )
+                db.add(execution)
+                db.commit()
+            
             return {
                 "output": html,
                 "error": error_message,

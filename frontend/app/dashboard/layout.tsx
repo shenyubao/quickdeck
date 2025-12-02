@@ -23,6 +23,7 @@ import {
   HistoryOutlined,
   SettingOutlined,
   PlusOutlined,
+  KeyOutlined,
 } from "@ant-design/icons";
 import { signOut, useSession } from "next-auth/react";
 import { projectApi, type Project } from "@/lib/api";
@@ -103,6 +104,7 @@ export default function DashboardLayout({
   const getSelectedKey = () => {
     if (pathname?.includes("/projects")) return "project-management";
     if (pathname?.includes("/history")) return "history";
+    if (pathname?.includes("/credentials")) return "credentials";
     return "tasks";
   };
 
@@ -111,7 +113,7 @@ export default function DashboardLayout({
   useEffect(() => {
     const key = getSelectedKey();
     // 如果没有项目，且选中的是任务相关的菜单，自动切换到项目管理
-    if (projects.length === 0 && (key === "tasks" || key === "history")) {
+    if (projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
       setSelectedMenu("project-management");
       // 如果不在项目管理页面，则跳转过去
       if (!pathname?.includes("/projects")) {
@@ -180,12 +182,17 @@ export default function DashboardLayout({
           {
             key: "tasks",
             icon: <CheckSquareOutlined />,
-            label: "任务清单",
+            label: "任务列表",
           },
           {
             key: "history",
             icon: <HistoryOutlined />,
             label: "执行记录",
+          },
+          {
+            key: "credentials",
+            icon: <KeyOutlined />,
+            label: "凭证管理",
           },
           {
             type: "divider" as const,
@@ -205,6 +212,8 @@ export default function DashboardLayout({
       router.push("/dashboard");
     } else if (key === "history") {
       router.push("/dashboard/history");
+    } else if (key === "credentials") {
+      router.push("/dashboard/credentials");
     } else if (key === "project-management") {
       router.push("/dashboard/projects");
     }

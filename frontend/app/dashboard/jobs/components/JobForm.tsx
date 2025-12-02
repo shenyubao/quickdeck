@@ -20,17 +20,31 @@ import {
   Col,
   Modal,
   DatePicker,
+  Upload,
 } from "antd";
 import {
-  ArrowLeftOutlined,
   PlusOutlined,
   DeleteOutlined,
   PlayCircleOutlined,
 } from "@ant-design/icons";
-import { jobApi, type Project } from "@/lib/api";
+import { jobApi, credentialApi, type Project, type Credential } from "@/lib/api";
 import PythonCodeEditor from "./PythonCodeEditor";
 
 const { Title } = Typography;
+
+// 获取凭证类型显示名称
+const getCredentialTypeName = (type?: string) => {
+  switch (type) {
+    case "mysql":
+      return "MySQL凭证";
+    case "oss":
+      return "OSS凭证";
+    case "deepseek":
+      return "DeepSeek凭证";
+    default:
+      return "凭证";
+  }
+};
 
 interface JobFormProps {
   jobId?: number | null;
@@ -51,6 +65,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [currentTestStepIndex, setCurrentTestStepIndex] = useState<number | null>(null);
   const [currentTestOptions, setCurrentTestOptions] = useState<any[]>([]);
   const [testArgsForm] = Form.useForm();
+  const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
   // 保存加载的原始数据，用于在提交时补充未访问 tab 的字段
   const [loadedFormData, setLoadedFormData] = useState<any>(null);
 
@@ -61,17 +76,17 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       
       try {
         setLoadingJob(true);
-        const jobDetail = await jobApi.getDetailById(jobId);
+        const jobDetailData = await jobApi.getDetailById(jobId);
         
         // 填充表单数据
         const formValues: any = {
-          name: jobDetail.name,
-          path: jobDetail.path,
-          description: jobDetail.description || "",
+          name: jobDetailData.name,
+          path: jobDetailData.path,
+          description: jobDetailData.description || "",
         };
         
-        if (jobDetail.workflow) {
-          const wf = jobDetail.workflow;
+        if (jobDetailData.workflow) {
+          const wf = jobDetailData.workflow;
           formValues.timeout = wf.timeout;
           formValues.retry = wf.retry;
           formValues.node_type = wf.node_type;
@@ -83,12 +98,11 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
           formValues.options = wf.options.map((opt) => ({
             option_type: opt.option_type,
             name: opt.name,
-            label: opt.label,
+            display_name: opt.display_name,
             description: opt.description,
             default_value: opt.default_value,
-            input_type: opt.input_type,
             required: opt.required,
-            multi_valued: opt.multi_valued,
+            credential_type: opt.credential_type,
           }));
           
           // 转换步骤（extension 需要转换为 JSON 字符串）
@@ -254,6 +268,11 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       if (error instanceof Error && error.message.includes("验证")) {
         return;
       }
+      // 检查是否是 413 错误（数据太大）
+      if (error instanceof Error && (error.message.includes("413") || error.message.includes("数据太大") || error.message.includes("Body exceeded"))) {
+        message.error("数据太大，超过了 100MB 的限制。请减少数据量后重试。");
+        return;
+      }
       message.error(error instanceof Error ? error.message : "创建失败");
     } finally {
       setSubmitting(false);
@@ -311,27 +330,40 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       setCurrentTestOptions(options);
       setTestResult(null);
       
+      // 加载凭证列表（如果有凭证类型的参数）
+      if (currentProject) {
+        const credentialTypes = new Set<string>();
+        options.forEach((opt: any) => {
+          if (opt.option_type === "credential" && opt.credential_type) {
+            credentialTypes.add(opt.credential_type);
+          }
+        });
+        
+        // 加载所有需要的凭证类型
+        const loadCredentials = async () => {
+          const newCredentialsMap: Record<string, Credential[]> = {};
+          for (const type of credentialTypes) {
+            try {
+              const creds = await credentialApi.getAll({
+                project_id: currentProject.id,
+                credential_type: type,
+              });
+              newCredentialsMap[type] = creds;
+            } catch (error) {
+              console.error(`加载${type}凭证失败:`, error);
+              newCredentialsMap[type] = [];
+            }
+          }
+          setCredentialsMap(newCredentialsMap);
+        };
+        loadCredentials();
+      }
+      
       // 设置默认值
       const initialValues: Record<string, any> = {};
       options.forEach((opt: any) => {
         if (opt.default_value !== undefined && opt.default_value !== null && opt.default_value !== "") {
-          if (opt.multi_valued && opt.input_type === "number") {
-            // 多值数字，尝试解析为数组
-            try {
-              initialValues[opt.name] = JSON.parse(opt.default_value);
-            } catch {
-              initialValues[opt.name] = [opt.default_value];
-            }
-          } else if (opt.multi_valued) {
-            // 多值文本，尝试解析为数组或分割字符串
-            try {
-              initialValues[opt.name] = JSON.parse(opt.default_value);
-            } catch {
-              initialValues[opt.name] = opt.default_value.split(",").map((s: string) => s.trim());
-            }
-          } else {
-            initialValues[opt.name] = opt.default_value;
-          }
+          initialValues[opt.name] = opt.default_value;
         }
       });
       
@@ -512,8 +544,47 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                           >
                             <Select placeholder="请选择参数类型">
                               <Select.Option value="text">文本</Select.Option>
+                              <Select.Option value="date">日期</Select.Option>
+                              <Select.Option value="number">数字</Select.Option>
                               <Select.Option value="file">文件</Select.Option>
+                              <Select.Option value="credential">授权凭证</Select.Option>
                             </Select>
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            noStyle
+                            shouldUpdate={(prevValues, curValues) => {
+                              const prevOptionType = prevValues.options?.[name]?.option_type;
+                              const curOptionType = curValues.options?.[name]?.option_type;
+                              return prevOptionType !== curOptionType;
+                            }}
+                          >
+                            {({ getFieldValue }) => {
+                              const optionType = getFieldValue(["options", name, "option_type"]);
+                              if (optionType === "credential") {
+                                return (
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "credential_type"]}
+                                    label="凭证类型"
+                                    labelCol={{ span: 6 }}
+                                    wrapperCol={{ span: 18 }}
+                                    rules={[
+                                      { required: true, message: "请选择凭证类型" },
+                                    ]}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Select placeholder="请选择凭证类型">
+                                      <Select.Option value="mysql">MySQL凭证</Select.Option>
+                                      <Select.Option value="oss">OSS凭证</Select.Option>
+                                      <Select.Option value="deepseek">DeepSeek凭证</Select.Option>
+                                    </Select>
+                                  </Form.Item>
+                                );
+                              }
+                              return null;
+                            }}
                           </Form.Item>
                         </Col>
                         <Col span={12}>
@@ -534,30 +605,13 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                         <Col span={12}>
                           <Form.Item
                             {...restField}
-                            name={[name, "label"]}
-                            label="参数标签"
+                            name={[name, "display_name"]}
+                            label="参数显示名"
                             labelCol={{ span: 6 }}
                             wrapperCol={{ span: 18 }}
                             style={{ marginBottom: "8px" }}
                           >
-                            <Input placeholder="请输入参数标签（可选）" />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "input_type"]}
-                            label="输入类型"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            initialValue="plain_text"
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Select>
-                              <Select.Option value="plain_text">纯文本</Select.Option>
-                              <Select.Option value="date">日期</Select.Option>
-                              <Select.Option value="number">数字</Select.Option>
-                            </Select>
+                            <Input placeholder="请输入参数显示名（可选）" />
                           </Form.Item>
                         </Col>
                         <Col span={12}>
@@ -601,20 +655,6 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                             />
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "multi_valued"]}
-                            label="多值"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            valuePropName="checked"
-                            initialValue={false}
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Switch checkedChildren="是" unCheckedChildren="否" />
-                          </Form.Item>
-                        </Col>
                       </Row>
                     </div>
                   ))}
@@ -634,7 +674,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       },
       {
         key: "steps",
-        label: "步骤",
+        label: "运行步骤",
         children: (
           <div style={{ maxWidth: 800, padding: "20px 0" }}>
             <Title level={5}>步骤列表</Title>
@@ -823,6 +863,10 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                           在代码中通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args</code> 字典访问输入参数。
                                           例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>name</code>，则使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args.get("name")</code> 或 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args["name"]</code>
                                         </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          对于凭证类型的参数，通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential</code> 工具类访问凭证信息。
+                                          例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>mysql_credential</code>，先获取凭证ID：<code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>cred_id = args.get("mysql_credential")</code>，然后使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential.get_config(cred_id)</code> 获取配置
+                                        </div>
                                         <details style={{ cursor: "pointer" }}>
                                           <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例代码</summary>
                                           <pre
@@ -837,15 +881,80 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                               wordBreak: "break-word",
                                             }}
                                           >
-{`# 示例：获取参数并处理
+{`# 示例1：获取普通参数并处理
 name = args.get("name", "默认值")
 age = args.get("age", 0)
 
 # 处理逻辑
 print(f"姓名: {name}, 年龄: {age}")
 
-# 返回结果（可选）
-result = {"status": "success", "message": f"处理完成: {name}"}`}
+# 返回结果
+result_text = f"处理完成: {name}"
+dataset = [{"name": name, "age": age}]
+return (result_text, dataset)
+
+# 示例2：访问凭证参数（MySQL）
+def execute(args: dict) -> tuple:
+    # 获取凭证ID（从参数中）
+    mysql_cred_id = args.get("mysql_credential")
+    
+    if mysql_cred_id:
+        # 使用凭证工具类获取配置
+        mysql_config = credential.get_config(mysql_cred_id)
+        if mysql_config:
+            host = mysql_config.get("host")
+            port = mysql_config.get("port")
+            user = mysql_config.get("user")
+            password = mysql_config.get("password")
+            database = mysql_config.get("database")
+            # 使用凭证信息连接数据库...
+            print(f"连接到数据库: {host}:{port}/{database}")
+    
+    return ("执行完成", None)
+
+# 示例3：访问凭证参数（OSS）
+def execute(args: dict) -> tuple:
+    oss_cred_id = args.get("oss_credential")
+    if oss_cred_id:
+        oss_config = credential.get_config(oss_cred_id)
+        if oss_config:
+            endpoint = oss_config.get("endpoint")
+            access_key_id = oss_config.get("access_key_id")
+            access_key_secret = oss_config.get("access_key_secret")
+            bucket = oss_config.get("bucket")
+            # 使用OSS凭证...
+    
+    return ("执行完成", None)
+
+# 示例4：访问凭证参数（DeepSeek）
+def execute(args: dict) -> tuple:
+    deepseek_cred_id = args.get("deepseek_credential")
+    if deepseek_cred_id:
+        deepseek_config = credential.get_config(deepseek_cred_id)
+        if deepseek_config:
+            api_key = deepseek_config.get("api_key")
+            # 使用API密钥...
+    
+    return ("执行完成", None)
+
+# 示例5：通用凭证访问方法
+def execute(args: dict) -> tuple:
+    cred_id = args.get("my_credential")
+    if cred_id:
+        # 获取完整凭证信息（可选）
+        cred_info = credential.get(cred_id)
+        if cred_info:
+            cred_type = cred_info.get("credential_type")
+            cred_name = cred_info.get("name")
+            print(f"凭证类型: {cred_type}, 名称: {cred_name}")
+        
+        # 获取凭证配置（推荐方式）
+        cred_config = credential.get_config(cred_id)
+        if cred_config:
+            # 根据凭证类型使用不同的配置字段
+            print(f"配置: {cred_config}")
+    
+    return ("执行完成", None)`}
                                           </pre>
                                         </details>
                                       </div>
@@ -1107,7 +1216,7 @@ result = {"status": "success", "message": f"处理完成: {name}"}`}
                             {...restField}
                             name={[name, "extensions"]}
                             label="扩展配置"
-                            labelCol={{ span: 3 }}
+                            labelCol={{ span: 12 }}
                             wrapperCol={{ span: 21 }}
                             rules={[
                               { required: true, message: "请输入扩展配置" },
@@ -1188,27 +1297,6 @@ result = {"status": "success", "message": f"处理完成: {name}"}`}
   return (
     <Card>
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
-        {/* 头部 */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Space>
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={handleCancel}
-            >
-              返回
-            </Button>
-            <Title level={3} style={{ margin: 0 }}>
-              {isEditMode ? "编辑任务" : "新建任务"}
-            </Title>
-          </Space>
-        </div>
-
         {/* 表单 */}
         <Spin spinning={loadingJob}>
           <Form
@@ -1286,58 +1374,62 @@ result = {"status": "success", "message": f"处理完成: {name}"}`}
                 根据配置的输入参数填写测试值：
               </div>
               {currentTestOptions.map((option: any) => {
-                const label = option.label || option.name;
+                const label = option.display_name || option.name;
                 const isRequired = option.required;
-                const isMultiValued = option.multi_valued;
-                const inputType = option.input_type || "plain_text";
+                const optionType = option.option_type || "text";
                 
-                // 根据 input_type 渲染不同的输入组件
+                // 根据 option_type 渲染不同的输入组件
                 let inputComponent;
                 
-                if (isMultiValued) {
-                  // 多值输入 - 使用 Form.Item 的 getValueFromEvent 来处理
-                  if (inputType === "number") {
+                switch (optionType) {
+                  case "date":
                     inputComponent = (
-                      <Input.TextArea
-                        placeholder={`输入多个数字，用逗号分隔，例如: 1, 2, 3`}
-                        rows={3}
+                      <DatePicker
+                        style={{ width: "100%" }}
+                        placeholder="请选择日期"
+                        format="YYYY-MM-DD"
                       />
                     );
-                  } else {
+                    break;
+                  case "number":
                     inputComponent = (
-                      <Input.TextArea
-                        placeholder={`输入多个值，用逗号分隔，例如: 值1, 值2, 值3`}
-                        rows={3}
+                      <InputNumber
+                        style={{ width: "100%" }}
+                        placeholder="请输入数字"
                       />
                     );
-                  }
-                } else {
-                  // 单值输入
-                  switch (inputType) {
-                    case "date":
-                      inputComponent = (
-                        <DatePicker
-                          style={{ width: "100%" }}
-                          placeholder="请选择日期"
-                          format="YYYY-MM-DD"
-                        />
-                      );
-                      break;
-                    case "number":
-                      inputComponent = (
-                        <InputNumber
-                          style={{ width: "100%" }}
-                          placeholder="请输入数字"
-                        />
-                      );
-                      break;
-                    default:
-                      inputComponent = (
-                        <Input
-                          placeholder={`请输入${label}`}
-                        />
-                      );
-                  }
+                    break;
+                  case "file":
+                    inputComponent = (
+                      <Upload>
+                        <Button>选择文件</Button>
+                      </Upload>
+                    );
+                    break;
+                  case "credential":
+                    // 凭证类型参数，需要根据凭证类型过滤
+                    const credentialType = option.credential_type;
+                    const credentials = credentialsMap[credentialType || ""] || [];
+                    inputComponent = (
+                      <Select
+                        placeholder={`请选择${getCredentialTypeName(credentialType)}`}
+                        showSearch
+                        optionFilterProp="label"
+                      >
+                        {credentials.map((cred) => (
+                          <Select.Option key={cred.id} value={cred.id} label={cred.name}>
+                            {cred.name} {cred.description ? `(${cred.description})` : ""}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    );
+                    break;
+                  default:
+                    inputComponent = (
+                      <Input
+                        placeholder={`请输入${label}`}
+                      />
+                    );
                 }
                 
                 return (
@@ -1352,67 +1444,6 @@ result = {"status": "success", "message": f"处理完成: {name}"}`}
                     }
                     rules={isRequired ? [{ required: true, message: `请输入${label}` }] : []}
                     extra={option.description ? option.description : undefined}
-                    getValueFromEvent={
-                      isMultiValued
-                        ? (e: any) => {
-                            const value = e.target.value.trim();
-                            if (!value) return [];
-                            if (inputType === "number") {
-                              return value
-                                .split(",")
-                                .map((s: string) => parseFloat(s.trim()))
-                                .filter((n: number) => !isNaN(n));
-                            } else {
-                              return value
-                                .split(",")
-                                .map((s: string) => s.trim())
-                                .filter((s: string) => s);
-                            }
-                          }
-                        : undefined
-                    }
-                    normalize={
-                      isMultiValued && inputType === "number"
-                        ? (value) => {
-                            // 如果已经是数组，直接返回
-                            if (Array.isArray(value)) return value;
-                            // 如果是字符串，尝试解析
-                            if (typeof value === "string") {
-                              const parsed = value
-                                .split(",")
-                                .map((s) => parseFloat(s.trim()))
-                                .filter((n) => !isNaN(n));
-                              return parsed.length > 0 ? parsed : undefined;
-                            }
-                            return value;
-                          }
-                        : isMultiValued
-                        ? (value) => {
-                            // 如果已经是数组，直接返回
-                            if (Array.isArray(value)) return value;
-                            // 如果是字符串，分割
-                            if (typeof value === "string") {
-                              const parsed = value
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter((s) => s);
-                              return parsed.length > 0 ? parsed : undefined;
-                            }
-                            return value;
-                          }
-                        : undefined
-                    }
-                    getValueProps={
-                      isMultiValued
-                        ? (value) => {
-                            // 将数组转换为逗号分隔的字符串用于显示
-                            if (Array.isArray(value)) {
-                              return { value: value.join(", ") };
-                            }
-                            return { value: value || "" };
-                          }
-                        : undefined
-                    }
                   >
                     {inputComponent}
                   </Form.Item>

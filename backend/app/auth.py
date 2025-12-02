@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
-from app.database import settings
+from app.config import settings
 
 # bcrypt 密码长度限制（字节）
 BCRYPT_MAX_PASSWORD_LENGTH = 72

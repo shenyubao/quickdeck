@@ -1,20 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from pydantic_settings import BaseSettings
 from typing import Optional
-
-
-class Settings(BaseSettings):
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/quickdeck"
-    secret_key: str = "your-secret-key-here"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
-    
-    class Config:
-        env_file = ".env"
-
-
-settings = Settings()
+from app.config import settings
 
 # 延迟创建 engine，避免在导入时就连接数据库
 _engine: Optional[create_engine] = None

@@ -73,14 +73,13 @@ class JobBase(BaseModel):
 
 # Option 相关 schemas
 class OptionCreate(BaseModel):
-    option_type: str  # "text" or "file"
+    option_type: str  # "text", "date", "number", "file", "credential"
     name: str
-    label: Optional[str] = None
+    display_name: Optional[str] = None
     description: Optional[str] = None
     default_value: Optional[str] = None
-    input_type: str = "plain_text"  # "plain_text", "date", "number"
     required: bool = False
-    multi_valued: bool = False
+    credential_type: Optional[str] = None  # 凭证类型（当option_type为credential时使用）
 
 
 # Step 相关 schemas
@@ -118,12 +117,11 @@ class OptionResponse(BaseModel):
     id: int
     option_type: str
     name: str
-    label: Optional[str] = None
+    display_name: Optional[str] = None
     description: Optional[str] = None
     default_value: Optional[str] = None
-    input_type: str
     required: bool
-    multi_valued: bool
+    credential_type: Optional[str] = None  # 凭证类型（当option_type为credential时使用）
     
     class Config:
         from_attributes = True
@@ -183,9 +181,17 @@ class JobResponse(JobBase):
         from_attributes = True
 
 
+class OwnerInfo(BaseModel):
+    """负责人信息"""
+    id: int
+    username: str
+    nickname: Optional[str] = None
+
+
 class JobDetailResponse(JobBase):
     id: int
     owner_id: int
+    owner: Optional[OwnerInfo] = None
     project_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -217,4 +223,59 @@ class ScriptTestResponse(BaseModel):
     """脚本测试响应"""
     output: str  # 输出文本
     error: Optional[str] = None  # 错误信息（如果有）
+
+
+# 执行记录相关 schemas
+class JobExecutionResponse(BaseModel):
+    """执行记录响应"""
+    id: int
+    job_id: int
+    user_id: int
+    execution_type: str  # "manual" or "scheduled"
+    status: str  # "success" or "failure"
+    args: Optional[Dict[str, Any]] = None  # 入参
+    output_text: Optional[str] = None  # 返回的text
+    error_message: Optional[str] = None  # 错误信息
+    executed_at: datetime  # 执行时间
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class JobExecutionDetailResponse(JobExecutionResponse):
+    """执行记录详情响应（包含关联信息）"""
+    job_name: Optional[str] = None  # 任务名称
+    user_username: Optional[str] = None  # 执行人用户名
+    user_nickname: Optional[str] = None  # 执行人昵称
+
+
+# 凭证相关 schemas
+class CredentialBase(BaseModel):
+    credential_type: str  # "mysql", "oss", "deepseek"
+    name: str
+    description: Optional[str] = None
+    config: Dict[str, Any]  # 凭证配置信息
+
+
+class CredentialCreate(CredentialBase):
+    pass
+
+
+class CredentialUpdate(BaseModel):
+    credential_type: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+class CredentialResponse(CredentialBase):
+    id: int
+    project_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
 

@@ -27,16 +27,12 @@ class BaseModel(Base):
 
 # 枚举类型定义
 class OptionTypeEnum(str, enum.Enum):
-    """选项类型"""
+    """选项类型（合并了原来的参数类型和输入类型）"""
     TEXT = "text"
-    FILE = "file"
-
-
-class InputTypeEnum(str, enum.Enum):
-    """输入类型"""
-    PLAIN_TEXT = "plain_text"
     DATE = "date"
     NUMBER = "number"
+    FILE = "file"
+    CREDENTIAL = "credential"  # 授权凭证
 
 
 class StepTypeEnum(str, enum.Enum):
@@ -68,6 +64,25 @@ class NotificationTypeEnum(str, enum.Enum):
     DINGTALK_WEBHOOK = "dingtalk_webhook"
 
 
+class ExecutionTypeEnum(str, enum.Enum):
+    """执行方式类型"""
+    MANUAL = "manual"  # 手动执行
+    SCHEDULED = "scheduled"  # 定时任务
+
+
+class ExecutionStatusEnum(str, enum.Enum):
+    """执行状态"""
+    SUCCESS = "success"  # 成功
+    FAILURE = "failure"  # 失败
+
+
+class CredentialTypeEnum(str, enum.Enum):
+    """凭证类型"""
+    MYSQL = "mysql"
+    OSS = "oss"
+    DEEPSEEK = "deepseek"
+
+
 # 用户模型
 class User(BaseModel):
     __tablename__ = "users"
@@ -97,6 +112,7 @@ class Project(BaseModel):
     # 关系
     owner = relationship("User", back_populates="owned_projects")
     jobs = relationship("Job", back_populates="project", cascade="all, delete-orphan")
+    credentials = relationship("Credential", back_populates="project", cascade="all, delete-orphan")
     
     # 索引
     __table_args__ = (
@@ -173,14 +189,13 @@ class Option(BaseModel):
     __tablename__ = "options"
     
     workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, comment="所属工作流")
-    option_type = Column(SQLEnum(OptionTypeEnum), nullable=False, comment="选项类型(Text/File)")
+    option_type = Column(String, nullable=False, comment="选项类型(文本/日期/数字/文件/凭证)")
     name = Column(String, nullable=False, comment="选项名称")
-    label = Column(String, comment="选项标签")
+    display_name = Column(String, comment="选项显示名")
     description = Column(Text, comment="选项描述")
     default_value = Column(Text, comment="默认值")
-    input_type = Column(SQLEnum(InputTypeEnum), default=InputTypeEnum.PLAIN_TEXT, comment="输入类型")
     required = Column(Boolean, default=False, comment="是否必需")
-    multi_valued = Column(Boolean, default=False, comment="是否多值")
+    credential_type = Column(String, nullable=True, comment="凭证类型（当option_type为credential时使用）")
     
     # 关系
     workflow = relationship("Workflow", back_populates="options", foreign_keys=[workflow_id])
@@ -197,6 +212,48 @@ class Step(BaseModel):
     
     # 关系
     workflow = relationship("Workflow", back_populates="steps", foreign_keys=[workflow_id])
+
+
+# 执行记录模型
+class JobExecution(BaseModel):
+    __tablename__ = "job_executions"
+    
+    job_id = Column(Integer, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True, comment="所属任务")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True, comment="执行人")
+    execution_type = Column(String, nullable=False, default=ExecutionTypeEnum.MANUAL.value, comment="执行方式（手动/定时任务）")
+    status = Column(String, nullable=False, comment="执行状态（成功/失败）")
+    args = Column(JSON, comment="入参（JSON格式）")
+    output_text = Column(Text, comment="返回的text")
+    error_message = Column(Text, comment="错误信息（如果失败）")
+    executed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True, comment="执行时间")
+    
+    # 关系
+    job = relationship("Job", backref="executions")
+    user = relationship("User", backref="executions")
+    
+    # 索引
+    __table_args__ = (
+        {"comment": "任务执行记录表"}
+    )
+
+
+# 凭证模型
+class Credential(BaseModel):
+    __tablename__ = "credentials"
+    
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True, comment="所属项目")
+    credential_type = Column(String, nullable=False, comment="凭证类型（mysql/oss/deepseek）")
+    name = Column(String, nullable=False, comment="凭证名称")
+    description = Column(Text, nullable=True, comment="凭证描述")
+    config = Column(JSON, nullable=False, comment="凭证配置信息（JSON格式）")
+    
+    # 关系
+    project = relationship("Project", back_populates="credentials")
+    
+    # 索引
+    __table_args__ = (
+        {"comment": "凭证表"}
+    )
 
 
 

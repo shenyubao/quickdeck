@@ -1,4 +1,4 @@
-.PHONY: help install dev build up down clean migrate migrate-create migrate-upgrade migrate-downgrade wait-for-db
+.PHONY: help install dev build up down clean migrate migrate-create migrate-upgrade migrate-downgrade wait-for-db docker-build docker-push docker-build-push
 
 help:
 	@echo "QuickDeck Monorepo 管理命令"
@@ -17,6 +17,11 @@ help:
 	@echo "    make migrate-upgrade - 运行数据库迁移到最新版本"
 	@echo "    make migrate-downgrade - 回退一个迁移版本"
 	@echo "    make migrate         - 显示迁移状态"
+	@echo "  Docker 镜像:"
+	@echo "    make docker-build    - 构建 Docker 镜像（需要提供 REGISTRY=和 TAG=）"
+	@echo "    make docker-push     - 推送 Docker 镜像（需要提供 REGISTRY=和 TAG=）"
+	@echo "    make docker-build-push - 构建并推送镜像（需要提供 REGISTRY=和 TAG=）"
+	@echo "    示例: make docker-build-push REGISTRY=docker.io/yourusername TAG=v1.0.0"
 
 install:
 	@echo "安装后端依赖..."
@@ -82,4 +87,38 @@ migrate: wait-for-db
 	@echo "检查依赖..."
 	cd backend && poetry run alembic current
 	cd backend && poetry run alembic history
+
+# Docker 镜像构建和推送
+docker-build:
+	@if [ -z "$(REGISTRY)" ]; then \
+		echo "错误: 请提供 REGISTRY 参数，例如: make docker-build REGISTRY=docker.io/yourusername TAG=latest"; \
+		exit 1; \
+	fi
+	@TAG=$${TAG:-latest}; \
+	echo "构建后端镜像: $(REGISTRY)/quickdeck-backend:$$TAG"; \
+	docker build -t "$(REGISTRY)/quickdeck-backend:$$TAG" \
+		-t "$(REGISTRY)/quickdeck-backend:latest" \
+		-f backend/Dockerfile backend/; \
+	echo "构建前端镜像: $(REGISTRY)/quickdeck-frontend:$$TAG"; \
+	docker build -t "$(REGISTRY)/quickdeck-frontend:$$TAG" \
+		-t "$(REGISTRY)/quickdeck-frontend:latest" \
+		-f frontend/Dockerfile frontend/; \
+	echo "镜像构建完成！"
+
+docker-push:
+	@if [ -z "$(REGISTRY)" ]; then \
+		echo "错误: 请提供 REGISTRY 参数，例如: make docker-push REGISTRY=docker.io/yourusername TAG=latest"; \
+		exit 1; \
+	fi
+	@TAG=$${TAG:-latest}; \
+	echo "推送后端镜像: $(REGISTRY)/quickdeck-backend:$$TAG"; \
+	docker push "$(REGISTRY)/quickdeck-backend:$$TAG"; \
+	docker push "$(REGISTRY)/quickdeck-backend:latest"; \
+	echo "推送前端镜像: $(REGISTRY)/quickdeck-frontend:$$TAG"; \
+	docker push "$(REGISTRY)/quickdeck-frontend:$$TAG"; \
+	docker push "$(REGISTRY)/quickdeck-frontend:latest"; \
+	echo "镜像推送完成！"
+
+docker-build-push: docker-build docker-push
+	@echo "所有镜像已构建并推送完成！"
 

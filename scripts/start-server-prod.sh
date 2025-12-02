@@ -289,11 +289,9 @@ check_images() {
 start_services() {
     log_info "启动生产环境服务..."
     
-    # 构建镜像（如果需要）
-    if ! check_images; then
-        log_info "构建 Docker 镜像..."
-        docker-compose -f "$COMPOSE_FILE" build --progress=plain
-    fi
+    # 构建镜像（每次都重新构建）
+    log_info "构建 Docker 镜像..."
+    docker-compose -f "$COMPOSE_FILE" build --progress=plain
     
     # 启动数据库
     log_info "启动数据库..."

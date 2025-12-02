@@ -144,7 +144,7 @@ start_services() {
     
     # 构建镜像（如果需要）
     log_info "构建 Docker 镜像..."
-    docker-compose -f "$COMPOSE_FILE" build --no-cache
+    docker-compose -f "$COMPOSE_FILE" build --no-cache --progress=plain
     
     # 启动数据库
     log_info "启动数据库..."

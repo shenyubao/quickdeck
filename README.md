@@ -71,7 +71,7 @@ cp frontend/.env.example frontend/.env.local
 make dev
 
 # 或直接使用 docker-compose
-docker-compose up --build
+docker-compose up --build --progress=plain
 ```
 
 4. 访问应用

@@ -295,7 +295,7 @@ git pull
 ./scripts/start-server.sh stop
 
 # 3. 重新构建镜像
-docker-compose build --no-cache
+docker-compose build --no-cache --progress=plain
 
 # 4. 运行数据库迁移（如果有）
 ./scripts/start-server.sh migrate

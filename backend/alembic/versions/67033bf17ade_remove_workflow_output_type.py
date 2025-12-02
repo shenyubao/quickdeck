@@ -33,7 +33,7 @@ def downgrade() -> None:
     
     # 重新添加 output_type 字段
     from sqlalchemy.dialects import postgresql
-    op.add_column('workflows', sa.Column('output_type', postgresql.ENUM('text', 'table', name='outputtypeenum', create_type=False), nullable=True, server_default="text", comment='输出类型（text/table）'))
+    op.add_column('workflows', sa.Column('output_type', postgresql.ENUM('text', 'table', name='outputtypeenum', create_type=False), nullable=True, server_default=sa.text("'text'"), comment='输出类型（text/table）'))
     
     # 设置默认值
     op.execute("UPDATE workflows SET output_type = 'text' WHERE output_type IS NULL")

@@ -223,6 +223,7 @@ class JobExecution(BaseModel):
     status = Column(String, nullable=False, comment="执行状态（成功/失败）")
     args = Column(JSON, comment="入参（JSON格式）")
     output_text = Column(Text, comment="返回的text")
+    output_dataset = Column(JSON, comment="返回的dataset数据详情（TOP10条）")
     error_message = Column(Text, comment="错误信息（如果失败）")
     executed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True, comment="执行时间")
     

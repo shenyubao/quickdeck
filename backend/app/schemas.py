@@ -244,6 +244,7 @@ class JobExecutionResponse(BaseModel):
     status: str  # "success" or "failure"
     args: Optional[Dict[str, Any]] = None  # 入参
     output_text: Optional[str] = None  # 返回的text
+    output_dataset: Optional[Any] = None  # 返回的dataset数据详情（TOP10条）
     error_message: Optional[str] = None  # 错误信息
     executed_at: datetime  # 执行时间
     created_at: datetime

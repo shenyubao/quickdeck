@@ -124,6 +124,7 @@ async def get_executions(
                 "status": execution.status,  # 数据库字段是 String，直接使用
                 "args": execution.args,
                 "output_text": execution.output_text,
+                "output_dataset": execution.output_dataset,
                 "error_message": execution.error_message,
                 "executed_at": execution.executed_at,
                 "created_at": execution.created_at,
@@ -200,6 +201,7 @@ async def get_execution(
         "status": execution.status,  # 数据库字段是 String，直接使用
         "args": execution.args,
         "output_text": execution.output_text,
+        "output_dataset": execution.output_dataset,
         "error_message": execution.error_message,
         "executed_at": execution.executed_at,
         "created_at": execution.created_at,

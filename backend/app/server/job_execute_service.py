@@ -145,6 +145,8 @@ class JobExecuteService:
             # 记录执行记录（成功）
             if db:
                 output_text = result.get("text", "")
+                dataset = result.get("dataset")
+                output_dataset = JobExecuteService._extract_top10_dataset(dataset)
                 # 确保使用枚举的值（字符串）而不是枚举对象
                 execution = JobExecution(
                     job_id=job.id,
@@ -153,6 +155,7 @@ class JobExecuteService:
                     status=ExecutionStatusEnum.SUCCESS.value,
                     args=args or {},
                     output_text=output_text,
+                    output_dataset=output_dataset,
                     error_message=None
                 )
                 db.add(execution)
@@ -172,6 +175,8 @@ class JobExecuteService:
             # 记录执行记录（失败）
             if db:
                 output_text = result.get("text", "")
+                dataset = result.get("dataset")
+                output_dataset = JobExecuteService._extract_top10_dataset(dataset)
                 # 确保使用枚举的值（字符串）而不是枚举对象
                 execution = JobExecution(
                     job_id=job.id,
@@ -180,6 +185,7 @@ class JobExecuteService:
                     status=ExecutionStatusEnum.FAILURE.value,
                     args=args or {},
                     output_text=output_text,
+                    output_dataset=output_dataset,
                     error_message=error_message
                 )
                 db.add(execution)
@@ -291,6 +297,43 @@ class JobExecuteService:
         escaped_message = html.escape(error_message)
         html_message = escaped_message.replace("\n", "<br>")
         return f"<div style='color: red;'>{html_message}</div>"
+    
+    @staticmethod
+    def _extract_top10_dataset(dataset: Any) -> Optional[Any]:
+        """
+        从 dataset 中提取 TOP10 条数据
+        
+        Args:
+            dataset: 数据集（可能是列表、字典或其他类型）
+            
+        Returns:
+            TOP10 条数据，如果 dataset 为空或不是列表则返回 None
+        """
+        if dataset is None or dataset == "":
+            return None
+        
+        # 如果 dataset 是字符串，尝试解析为 JSON
+        if isinstance(dataset, str):
+            try:
+                dataset = json.loads(dataset)
+            except:
+                return None
+        
+        # 如果是列表，取前10条
+        if isinstance(dataset, list):
+            if not dataset:
+                return None
+            return dataset[:10]
+        
+        # 如果是字典，转换为列表格式（取前10个键值对）
+        if isinstance(dataset, dict):
+            if not dataset:
+                return None
+            items = list(dataset.items())[:10]
+            return dict(items)
+        
+        # 其他类型，返回 None
+        return None
     
     @staticmethod
     def _save_file_to_temp(file_obj: Dict[str, Any], param_name: str) -> Optional[str]:

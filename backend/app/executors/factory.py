@@ -18,7 +18,9 @@ class ExecutorFactory:
     @classmethod
     def get_executor(cls, step_type: str) -> StepExecutor:
         """根据步骤类型获取执行器"""
-        executor = cls._executors.get(step_type)
+        # 将 step_type 转换为小写，确保兼容性（数据库可能存储为大写）
+        step_type_lower = step_type.lower() if step_type else step_type
+        executor = cls._executors.get(step_type_lower)
         if not executor:
             raise ValueError(f"不支持的步骤类型: {step_type}")
         return executor

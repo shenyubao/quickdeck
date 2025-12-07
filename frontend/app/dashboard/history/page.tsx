@@ -25,7 +25,7 @@ import {
 } from "@ant-design/icons";
 import { executionApi, jobApi, type JobExecution, type Job } from "@/lib/api";
 
-// 日期格式化函数
+// 日期格式化函数（完整格式，用于列表）
 const formatDateTime = (dateString: string) => {
   const date = new Date(dateString);
   const year = date.getFullYear();
@@ -37,8 +37,141 @@ const formatDateTime = (dateString: string) => {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
+// 日期格式化函数（短格式，用于弹窗）
+const formatDateTimeShort = (dateString: string) => {
+  const date = new Date(dateString);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${month}-${day} ${hours}:${minutes}`;
+};
+
 const { Title } = Typography;
 const { Option } = Select;
+
+// 渲染数据详情表格的辅助函数
+const renderDatasetTable = (dataset: any) => {
+  if (!dataset) {
+    return <span style={{ color: "#999" }}>无数据</span>;
+  }
+
+  // 如果是数组
+  if (Array.isArray(dataset)) {
+    if (dataset.length === 0) {
+      return <span style={{ color: "#999" }}>无数据</span>;
+    }
+
+    // 如果数组中的元素是对象
+    if (dataset[0] && typeof dataset[0] === "object" && !Array.isArray(dataset[0])) {
+      const columns = Object.keys(dataset[0]).map((key) => ({
+        title: key,
+        dataIndex: key,
+        key: key,
+        width: 150,
+        ellipsis: true,
+        render: (text: any) => {
+          if (text === null || text === undefined) return "-";
+          if (typeof text === "object") {
+            return <span style={{ wordBreak: "break-word" }} title={JSON.stringify(text)}>{JSON.stringify(text)}</span>;
+          }
+          return <span style={{ wordBreak: "break-word" }} title={String(text)}>{String(text)}</span>;
+        },
+      }));
+
+      return (
+        <div className="table-container-wrapper" style={{ width: "100%", maxWidth: "100%", overflow: "auto" }}>
+          <Table
+            columns={columns}
+            dataSource={dataset.map((item, index) => ({ ...item, key: index }))}
+            pagination={false}
+            size="small"
+            scroll={{ x: true }}
+            bordered
+          />
+        </div>
+      );
+    } else {
+      // 如果是简单数组
+      const columns = [
+        { title: "序号", dataIndex: "index", key: "index", width: 80 },
+        {
+          title: "值",
+          dataIndex: "value",
+          key: "value",
+          ellipsis: true,
+          render: (text: any) => {
+            if (text === null || text === undefined) return "-";
+            if (typeof text === "object") return <span style={{ wordBreak: "break-word" }}>{JSON.stringify(text)}</span>;
+            return <span style={{ wordBreak: "break-word" }}>{String(text)}</span>;
+          },
+        },
+      ];
+
+      return (
+        <div className="table-container-wrapper" style={{ width: "100%", maxWidth: "100%", overflow: "auto" }}>
+          <Table
+            columns={columns}
+            dataSource={dataset.map((item, index) => ({ index: index + 1, value: item, key: index }))}
+            pagination={false}
+            size="small"
+            scroll={{ x: true }}
+            bordered
+          />
+        </div>
+      );
+    }
+  }
+
+  // 如果是对象
+  if (typeof dataset === "object") {
+    const columns = [
+      { title: "键", dataIndex: "key", key: "key", width: 200 },
+      {
+        title: "值",
+        dataIndex: "value",
+        key: "value",
+        ellipsis: true,
+        render: (text: any) => {
+          if (text === null || text === undefined) return "-";
+          if (typeof text === "object") {
+            const jsonStr = JSON.stringify(text, null, 2);
+            return <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }} title={jsonStr}>{jsonStr}</pre>;
+          }
+          return <span style={{ wordBreak: "break-word" }} title={String(text)}>{String(text)}</span>;
+        },
+      },
+    ];
+
+    const dataSource = Object.entries(dataset).map(([key, value]) => ({ key, value }));
+
+    return (
+      <div className="table-container-wrapper" style={{ width: "100%", maxWidth: "100%", overflow: "auto" }}>
+        <Table
+          columns={columns}
+          dataSource={dataSource}
+          pagination={false}
+          size="small"
+          scroll={{ x: true }}
+          bordered
+        />
+      </div>
+    );
+  }
+
+  // 其他类型，直接显示
+  return (
+    <div style={{ 
+      background: "#f5f5f5", 
+      padding: "12px", 
+      borderRadius: "4px",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+    }}>
+      {String(dataset)}
+    </div>
+  );
+};
 
 export default function HistoryPage() {
   const [loading, setLoading] = useState(false);
@@ -56,6 +189,25 @@ export default function HistoryPage() {
   }>({});
   const [selectedExecution, setSelectedExecution] = useState<JobExecution | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+
+  // 确保表格容器宽度不超出父容器
+  useEffect(() => {
+    if (detailModalVisible) {
+      setTimeout(() => {
+        const descriptionsItemContent = document.querySelector('.ant-descriptions-item-content');
+        const tableContainers = document.querySelectorAll('.table-container-wrapper');
+        
+        if (descriptionsItemContent) {
+          const maxWidth = descriptionsItemContent.clientWidth;
+          tableContainers.forEach((container) => {
+            const htmlContainer = container as HTMLElement;
+            htmlContainer.style.setProperty('max-width', `${maxWidth}px`, 'important');
+            htmlContainer.style.setProperty('width', `${maxWidth}px`, 'important');
+          });
+        }
+      }, 100);
+    }
+  }, [detailModalVisible, selectedExecution]);
 
   // 加载工具列表
   useEffect(() => {
@@ -307,11 +459,33 @@ export default function HistoryPage() {
             关闭
           </Button>,
         ]}
-        width={800}
+        width={1000}
+        style={{ maxWidth: "90vw" }}
+        styles={{
+          body: { maxWidth: "100%", overflow: "hidden" },
+        }}
       >
         {selectedExecution && (
-          <div>
-            <Descriptions bordered column={2}>
+          <div style={{ width: "100%", maxWidth: "100%", overflow: "hidden" }}>
+            <style>{`
+              .ant-descriptions-item-content {
+                max-width: 100% !important;
+                overflow: hidden !important;
+              }
+              .ant-descriptions-view {
+                table-layout: fixed !important;
+              }
+              .table-container-wrapper {
+                width: 100% !important;
+                max-width: 100% !important;
+                overflow-x: auto !important;
+              }
+            `}</style>
+            <Descriptions 
+              bordered 
+              column={2}
+              styles={{ label: { width: "120px", minWidth: "120px" } }}
+            >
               <Descriptions.Item label="执行时间">
                 {formatDateTime(selectedExecution.executed_at)}
               </Descriptions.Item>
@@ -321,17 +495,17 @@ export default function HistoryPage() {
               <Descriptions.Item label="执行人">
                 {selectedExecution.user_nickname || selectedExecution.user_username || `用户 #${selectedExecution.user_id}`}
               </Descriptions.Item>
-              <Descriptions.Item label="执行方式">
-                <Tag color={selectedExecution.execution_type === "manual" ? "blue" : "purple"}>
-                  {selectedExecution.execution_type === "manual" ? "手动" : "定时任务"}
-                </Tag>
-              </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <Tag
                   icon={selectedExecution.status === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
                   color={selectedExecution.status === "success" ? "success" : "error"}
                 >
                   {selectedExecution.status === "success" ? "成功" : "失败"}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="执行方式" span={2}>
+                <Tag color={selectedExecution.execution_type === "manual" ? "blue" : "purple"}>
+                  {selectedExecution.execution_type === "manual" ? "手动" : "定时任务"}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="错误信息" span={2}>
@@ -345,6 +519,8 @@ export default function HistoryPage() {
                   maxHeight: "200px",
                   overflow: "auto",
                   margin: 0,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
                 }}>
                   {JSON.stringify(selectedExecution.args || {}, null, 2)}
                 </pre>
@@ -356,9 +532,14 @@ export default function HistoryPage() {
                   borderRadius: "4px",
                   maxHeight: "300px",
                   overflow: "auto",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
                 }}>
                   {selectedExecution.output_text || "无输出"}
                 </div>
+              </Descriptions.Item>
+              <Descriptions.Item label="数据详情（TOP10）" span={2}>
+                {renderDatasetTable(selectedExecution.output_dataset)}
               </Descriptions.Item>
             </Descriptions>
           </div>

@@ -401,6 +401,7 @@ export interface JobExecution {
   status: "success" | "failure";
   args?: Record<string, any>;
   output_text?: string;
+  output_dataset?: any; // 数据详情（TOP10条）
   error_message?: string;
   executed_at: string;
   created_at: string;

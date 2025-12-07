@@ -12,14 +12,17 @@ import {
   Typography,
   message,
   Spin,
+  Select,
+  Tag,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
+  UserAddOutlined,
 } from "@ant-design/icons";
-import { projectApi, type Project } from "@/lib/api";
+import { projectApi, userApi, type Project, type User } from "@/lib/api";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -27,6 +30,14 @@ export default function ProjectsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [form] = Form.useForm();
+  
+  // 用户绑定相关状态
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [projectUsers, setProjectUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [userLoading, setUserLoading] = useState(false);
+  const [userForm] = Form.useForm();
 
   // 加载项目列表
   useEffect(() => {
@@ -124,6 +135,88 @@ export default function ProjectsPage() {
     setEditingProject(null);
   };
 
+  // 用户绑定相关函数
+  const handleBindUsers = async (project: Project) => {
+    setCurrentProject(project);
+    setIsUserModalOpen(true);
+    setUserLoading(true);
+    try {
+      // 加载项目的关联用户和所有用户
+      const [users, all] = await Promise.all([
+        projectApi.getUsers(project.id),
+        userApi.getAll(),
+      ]);
+      setProjectUsers(users);
+      setAllUsers(all);
+      
+      // 设置已选中的用户（排除项目所有者）
+      const selectedUserIds = users
+        .filter(u => u.id !== project.owner_id)
+        .map(u => u.id);
+      userForm.setFieldsValue({ user_ids: selectedUserIds });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("认证失败")) {
+        return;
+      }
+      message.error(error instanceof Error ? error.message : "加载用户列表失败");
+    } finally {
+      setUserLoading(false);
+    }
+  };
+
+  const handleUserModalOk = async () => {
+    if (!currentProject) return;
+    
+    try {
+      const values = await userForm.validateFields();
+      const selectedUserIds: number[] = values.user_ids || [];
+      
+      // 获取当前关联的用户ID（排除项目所有者）
+      const currentUserIds = projectUsers
+        .filter(u => u.id !== currentProject.owner_id)
+        .map(u => u.id);
+      
+      // 找出需要添加和删除的用户
+      const toAdd = selectedUserIds.filter(id => !currentUserIds.includes(id));
+      const toRemove = currentUserIds.filter(id => !selectedUserIds.includes(id));
+      
+      // 执行添加和删除操作
+      if (toAdd.length > 0) {
+        await projectApi.addUsers(currentProject.id, toAdd);
+      }
+      
+      for (const userId of toRemove) {
+        await projectApi.removeUser(currentProject.id, userId);
+      }
+      
+      message.success("用户绑定更新成功");
+      setIsUserModalOpen(false);
+      userForm.resetFields();
+      setCurrentProject(null);
+      
+      // 重新加载项目用户列表（如果需要显示）
+      if (toAdd.length > 0 || toRemove.length > 0) {
+        const updatedUsers = await projectApi.getUsers(currentProject.id);
+        setProjectUsers(updatedUsers);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("验证")) {
+        return;
+      }
+      if (error instanceof Error && error.message.includes("认证失败")) {
+        return;
+      }
+      message.error(error instanceof Error ? error.message : "操作失败");
+    }
+  };
+
+  const handleUserModalCancel = () => {
+    setIsUserModalOpen(false);
+    userForm.resetFields();
+    setCurrentProject(null);
+    setProjectUsers([]);
+  };
+
   // 表格列定义
   const projectColumns: ColumnsType<Project> = [
     {
@@ -166,6 +259,14 @@ export default function ProjectsPage() {
       fixed: "right",
       render: (_, record) => (
         <Space size="small">
+          <Button
+            type="link"
+            icon={<UserAddOutlined />}
+            onClick={() => handleBindUsers(record)}
+            size="small"
+          >
+            用户绑定
+          </Button>
           <Button
             type="link"
             icon={<EditOutlined />}
@@ -263,6 +364,67 @@ export default function ProjectsPage() {
             />
           </Form.Item>
         </Form>
+      </Modal>
+      
+      {/* 用户绑定Modal */}
+      <Modal
+        title="用户绑定"
+        open={isUserModalOpen}
+        onOk={handleUserModalOk}
+        onCancel={handleUserModalCancel}
+        okText="确定"
+        cancelText="取消"
+        width={600}
+      >
+        <Spin spinning={userLoading}>
+          {currentProject && (
+            <div style={{ marginBottom: 16 }}>
+              <Typography.Text strong>项目：</Typography.Text>
+              <Typography.Text>{currentProject.name}</Typography.Text>
+            </div>
+          )}
+          <Form
+            form={userForm}
+            layout="vertical"
+            initialValues={{ user_ids: [] }}
+          >
+            <Form.Item
+              name="user_ids"
+              label="选择关联用户"
+              tooltip="关联的用户将拥有此项目的访问权限"
+            >
+              <Select
+                mode="multiple"
+                placeholder="请选择用户"
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+                }
+                options={allUsers
+                  .filter(u => u.id !== currentProject?.owner_id) // 排除项目所有者
+                  .map(u => ({
+                    label: `${u.username}${u.nickname ? ` (${u.nickname})` : ""}`,
+                    value: u.id,
+                  }))}
+              />
+            </Form.Item>
+          </Form>
+          {projectUsers.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
+                当前关联用户：
+              </Typography.Text>
+              <Space wrap>
+                {projectUsers.map((user) => (
+                  <Tag key={user.id} color={user.id === currentProject?.owner_id ? "blue" : "default"}>
+                    {user.username}
+                    {user.id === currentProject?.owner_id && " (所有者)"}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          )}
+        </Spin>
       </Modal>
     </div>
   );

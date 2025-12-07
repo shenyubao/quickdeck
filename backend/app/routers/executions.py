@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 import traceback
 from app.database import get_db
-from app.models import JobExecution, Job, User, ExecutionTypeEnum, ExecutionStatusEnum, job_visible_users
+from app.models import JobExecution, Job, User, Project, ExecutionTypeEnum, ExecutionStatusEnum, job_visible_users, project_users
 from app.schemas import JobExecutionResponse, JobExecutionDetailResponse
 from app.routers.auth import get_current_user
 
@@ -47,32 +47,60 @@ async def get_executions(
         )
         
         # 只返回当前用户有权限查看的工具的执行记录
-        # 用户可以看到自己拥有的工具或可见的工具的执行记录
+        # 用户可以看到：
+        # 1. 自己拥有的工具的执行记录
+        # 2. 可见的工具的执行记录（通过 job_visible_users）
+        # 3. 项目关联用户可以看到项目中的所有工具的执行记录（通过 project_users）
+        
+        # 获取用户有权限访问的项目ID列表（作为所有者的项目 + 关联的项目）
+        owned_projects = db.query(Project.id).filter(Project.owner_id == current_user.id).all()
+        accessible_projects = db.query(project_users.c.project_id).filter(
+            project_users.c.user_id == current_user.id
+        ).all()
+        project_ids = [p.id for p in owned_projects] + [p.project_id for p in accessible_projects]
+        
         # 使用子查询来查找可见的工具
         visible_job_ids_subq = db.query(job_visible_users.c.job_id).filter(
             job_visible_users.c.user_id == current_user.id
         )
         
-        query = query.join(Job).filter(
-            or_(
-                Job.owner_id == current_user.id,
-                Job.id.in_(visible_job_ids_subq)
-            )
-        )
+        # 构建权限过滤条件
+        conditions = [
+            Job.owner_id == current_user.id,
+            Job.id.in_(visible_job_ids_subq)
+        ]
+        
+        # 如果有可访问的项目，添加项目权限条件
+        if project_ids:
+            conditions.append(Job.project_id.in_(project_ids))
+        
+        query = query.join(Job).filter(or_(*conditions))
         
         # 如果指定了工具ID，则过滤工具
         if job_id is not None:
-            # 验证工具是否属于当前用户或可见
+            # 验证工具是否属于当前用户、可见或属于可访问的项目
             visible_job_ids_subq = db.query(job_visible_users.c.job_id).filter(
                 job_visible_users.c.user_id == current_user.id
             )
             
+            # 获取用户有权限访问的项目ID列表
+            owned_projects = db.query(Project.id).filter(Project.owner_id == current_user.id).all()
+            accessible_projects = db.query(project_users.c.project_id).filter(
+                project_users.c.user_id == current_user.id
+            ).all()
+            project_ids = [p.id for p in owned_projects] + [p.project_id for p in accessible_projects]
+            
+            conditions = [
+                Job.owner_id == current_user.id,
+                Job.id.in_(visible_job_ids_subq)
+            ]
+            
+            if project_ids:
+                conditions.append(Job.project_id.in_(project_ids))
+            
             job = db.query(Job).filter(
                 Job.id == job_id,
-                or_(
-                    Job.owner_id == current_user.id,
-                    Job.id.in_(visible_job_ids_subq)
-                )
+                or_(*conditions)
             ).first()
             if not job:
                 raise HTTPException(
@@ -186,6 +214,20 @@ async def get_execution(
         ).count()
         if visible_count > 0:
             has_permission = True
+        else:
+            # 检查用户是否有项目权限
+            project = db.query(Project).filter(Project.id == job.project_id).first()
+            if project:
+                if project.owner_id == current_user.id:
+                    has_permission = True
+                else:
+                    # 检查是否是项目关联用户
+                    accessible_count = db.query(project_users).filter(
+                        project_users.c.project_id == project.id,
+                        project_users.c.user_id == current_user.id
+                    ).count()
+                    if accessible_count > 0:
+                        has_permission = True
     
     if not has_permission:
         raise HTTPException(

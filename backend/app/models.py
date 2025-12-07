@@ -97,6 +97,7 @@ class User(BaseModel):
     owned_projects = relationship("Project", back_populates="owner")
     owned_jobs = relationship("Job", back_populates="owner")
     visible_jobs = relationship("Job", secondary="job_visible_users", back_populates="visible_users")
+    accessible_projects = relationship("Project", secondary="project_users", back_populates="accessible_users")
 
 
 # 项目模型
@@ -112,6 +113,7 @@ class Project(BaseModel):
     owner = relationship("User", back_populates="owned_projects")
     jobs = relationship("Job", back_populates="project", cascade="all, delete-orphan")
     credentials = relationship("Credential", back_populates="project", cascade="all, delete-orphan")
+    accessible_users = relationship("User", secondary="project_users", back_populates="accessible_projects")
     
     # 索引
     __table_args__ = (
@@ -124,6 +126,14 @@ job_visible_users = Table(
     "job_visible_users",
     Base.metadata,
     Column("job_id", Integer, ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# 项目-用户关联表
+project_users = Table(
+    "project_users",
+    Base.metadata,
+    Column("project_id", Integer, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
 )
 

@@ -73,6 +73,22 @@ class ProjectResponse(ProjectBase):
         from_attributes = True
 
 
+class ProjectUserResponse(BaseModel):
+    """项目用户响应"""
+    id: int
+    username: str
+    nickname: Optional[str] = None
+    email: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class ProjectUserAddRequest(BaseModel):
+    """添加项目用户请求"""
+    user_ids: List[int]
+
+
 # Job 相关 schemas
 class JobBase(BaseModel):
     name: str

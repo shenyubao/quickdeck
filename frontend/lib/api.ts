@@ -580,6 +580,46 @@ export const projectApi = {
     });
     return handleResponse<void>(response);
   },
+
+  /**
+   * 获取项目的关联用户列表
+   */
+  async getUsers(projectId: number): Promise<User[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/projects/${projectId}/users`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<User[]>(response);
+  },
+
+  /**
+   * 为项目添加关联用户
+   */
+  async addUsers(projectId: number, userIds: number[]): Promise<User[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/projects/${projectId}/users`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ user_ids: userIds }),
+    });
+    return handleResponse<User[]>(response);
+  },
+
+  /**
+   * 从项目移除关联用户
+   */
+  async removeUser(projectId: number, userId: number): Promise<void> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/projects/${projectId}/users/${userId}`, {
+      method: "DELETE",
+      headers,
+    });
+    return handleResponse<void>(response);
+  },
 };
 
 /**

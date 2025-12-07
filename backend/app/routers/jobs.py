@@ -5,13 +5,20 @@ from typing import List, Optional, Dict, Any
 import logging
 from app.database import get_db
 from app.models import (
-    Job, Project, User, Workflow, Option, Step,
+    Job, Project, User, Workflow, Option, Step, project_users,
     OptionTypeEnum, StepTypeEnum, NodeTypeEnum, ExecutionTypeEnum
 )
 from app.schemas import JobCreate, JobUpdate, JobResponse, JobDetailResponse, JobRunRequest, JobRunResponse, ScriptTestRequest, ScriptTestResponse
 from app.routers.auth import get_current_user
 
 logger = logging.getLogger("app.routers.jobs")
+
+
+def check_project_permission(project: Project, current_user: User) -> bool:
+    """检查用户是否有项目权限（是所有者或关联用户）"""
+    if project.owner_id == current_user.id:
+        return True
+    return current_user.id in [u.id for u in project.accessible_users]
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 security = HTTPBearer()
@@ -23,22 +30,48 @@ async def get_jobs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的工具列表"""
-    query = db.query(Job).filter(Job.owner_id == current_user.id)
+    """获取当前用户的工具列表（包括用户有权限访问的项目中的工具）"""
+    from sqlalchemy import or_
     
-    # 如果指定了项目ID，则过滤项目
+    # 如果指定了项目ID，则只返回该项目中的工具
     if project_id is not None:
-        # 验证项目是否属于当前用户
-        project = db.query(Project).filter(
-            Project.id == project_id,
-            Project.owner_id == current_user.id
-        ).first()
+        # 验证项目是否存在且用户有权限访问
+        project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="项目不存在或无权限访问"
             )
-        query = query.filter(Job.project_id == project_id)
+        # 检查权限（所有者或关联用户）
+        if not check_project_permission(project, current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="项目不存在或无权限访问"
+            )
+        # 返回该项目中的所有工具（用户有权限访问的项目中的工具）
+        query = db.query(Job).filter(Job.project_id == project_id)
+    else:
+        # 没有指定项目ID，返回用户创建的工具，或者用户有权限访问的项目中的工具
+        # 获取用户有权限访问的项目ID列表（作为所有者的项目 + 关联的项目）
+        owned_projects = db.query(Project.id).filter(Project.owner_id == current_user.id).all()
+        accessible_projects = db.query(project_users.c.project_id).filter(
+            project_users.c.user_id == current_user.id
+        ).all()
+        
+        # 合并项目ID列表
+        project_ids = [p.id for p in owned_projects] + [p.project_id for p in accessible_projects]
+        
+        # 查询这些项目中的工具，或者用户自己创建的工具
+        if project_ids:
+            query = db.query(Job).filter(
+                or_(
+                    Job.owner_id == current_user.id,
+                    Job.project_id.in_(project_ids)
+                )
+            )
+        else:
+            # 如果没有可访问的项目，只返回用户创建的工具
+            query = db.query(Job).filter(Job.owner_id == current_user.id)
     
     jobs = query.order_by(Job.path, Job.name).all()
     return jobs
@@ -51,10 +84,7 @@ async def get_job(
     db: Session = Depends(get_db)
 ):
     """获取单个工具"""
-    job = db.query(Job).filter(
-        Job.id == job_id,
-        Job.owner_id == current_user.id
-    ).first()
+    job = db.query(Job).filter(Job.id == job_id).first()
     
     if not job:
         raise HTTPException(
@@ -62,7 +92,19 @@ async def get_job(
             detail="工具不存在或无权限访问"
         )
     
-    return job
+    # 检查权限：工具所有者或项目关联用户
+    if job.owner_id == current_user.id:
+        return job
+    
+    # 检查项目权限
+    project = db.query(Project).filter(Project.id == job.project_id).first()
+    if project and check_project_permission(project, current_user):
+        return job
+    
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="工具不存在或无权限访问"
+    )
 
 
 @router.get("/{job_id}/detail", response_model=JobDetailResponse)
@@ -76,14 +118,27 @@ async def get_job_detail(
         joinedload(Job.workflow).joinedload(Workflow.options),
         joinedload(Job.workflow).joinedload(Workflow.steps),
         joinedload(Job.owner)
-    ).filter(
-        Job.id == job_id,
-        Job.owner_id == current_user.id
-    ).first()
+    ).filter(Job.id == job_id).first()
     
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail="工具不存在或无权限访问"
+        )
+    
+    # 检查权限：工具所有者或项目关联用户
+    has_permission = False
+    if job.owner_id == current_user.id:
+        has_permission = True
+    else:
+        # 检查项目权限
+        project = db.query(Project).filter(Project.id == job.project_id).first()
+        if project and check_project_permission(project, current_user):
+            has_permission = True
+    
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="工具不存在或无权限访问"
         )
     
@@ -165,15 +220,19 @@ async def create_job(
     db: Session = Depends(get_db)
 ):
     """创建工具（可选包含工作流）"""
-    # 验证项目是否存在且属于当前用户
-    project = db.query(Project).filter(
-        Project.id == job_data.project_id,
-        Project.owner_id == current_user.id
-    ).first()
+    # 验证项目是否存在且用户有权限访问
+    project = db.query(Project).filter(Project.id == job_data.project_id).first()
     
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail="项目不存在或无权限访问"
+        )
+    
+    # 检查权限（所有者或关联用户都可以创建工具）
+    if not check_project_permission(project, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="项目不存在或无权限访问"
         )
     
@@ -291,16 +350,20 @@ async def update_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """更新工具（可选包含工作流）"""
-    job = db.query(Job).filter(
-        Job.id == job_id,
-        Job.owner_id == current_user.id
-    ).first()
+    """更新工具（可选包含工作流）- 仅工具所有者"""
+    job = db.query(Job).filter(Job.id == job_id).first()
     
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="工具不存在或无权限访问"
+        )
+    
+    # 只有工具所有者可以更新工具
+    if job.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有工具所有者可以更新工具"
         )
     
     # 更新字段
@@ -441,16 +504,20 @@ async def delete_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """删除工具"""
-    job = db.query(Job).filter(
-        Job.id == job_id,
-        Job.owner_id == current_user.id
-    ).first()
+    """删除工具 - 仅工具所有者"""
+    job = db.query(Job).filter(Job.id == job_id).first()
     
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="工具不存在或无权限访问"
+        )
+    
+    # 只有工具所有者可以删除工具
+    if job.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有工具所有者可以删除工具"
         )
     
     db.delete(job)
@@ -472,14 +539,27 @@ async def run_job(
     # 获取工具，并预加载工作流和步骤
     job = db.query(Job).options(
         joinedload(Job.workflow).joinedload(Workflow.steps)
-    ).filter(
-        Job.id == job_id,
-        Job.owner_id == current_user.id
-    ).first()
+    ).filter(Job.id == job_id).first()
     
     if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail="工具不存在或无权限访问"
+        )
+    
+    # 检查权限：工具所有者或项目关联用户都可以运行工具
+    has_permission = False
+    if job.owner_id == current_user.id:
+        has_permission = True
+    else:
+        # 检查项目权限
+        project = db.query(Project).filter(Project.id == job.project_id).first()
+        if project and check_project_permission(project, current_user):
+            has_permission = True
+    
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="工具不存在或无权限访问"
         )
     

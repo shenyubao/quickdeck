@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Table,
   Modal,
@@ -24,16 +26,29 @@ import {
 import { userApi, type User, type UserCreate, type UserUpdate } from "@/lib/api";
 
 export default function UsersPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = (session as any)?.isAdmin || false;
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [form] = Form.useForm();
 
+  // 权限检查：非管理员重定向到首页
+  useEffect(() => {
+    if (session && !isAdmin) {
+      message.warning("您没有权限访问此页面");
+      router.push("/dashboard");
+    }
+  }, [session, isAdmin, router]);
+
   // 加载用户列表
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (isAdmin) {
+      loadUsers();
+    }
+  }, [isAdmin]);
 
   const loadUsers = async () => {
     try {
@@ -230,6 +245,11 @@ export default function UsersPage() {
       ),
     },
   ];
+
+  // 如果非管理员，不渲染内容（等待重定向）
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div>

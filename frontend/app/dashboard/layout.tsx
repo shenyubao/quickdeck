@@ -176,7 +176,11 @@ export default function DashboardLayout({
     },
   ];
 
-  // 侧边栏菜单项 - 根据是否有项目动态显示
+  // 获取用户是否为管理员
+  const user = session?.user as any;
+  const isAdmin = (session as any)?.isAdmin || false;
+
+  // 侧边栏菜单项 - 根据是否有项目和管理员权限动态显示
   const sideMenuItems: MenuProps["items"] = [
     // 只有当有项目时才显示工具相关的菜单
     ...(projects.length > 0
@@ -201,16 +205,21 @@ export default function DashboardLayout({
           },
         ]
       : []),
-    {
-      key: "project-management",
-      icon: <SettingOutlined />,
-      label: "项目管理",
-    },
-    {
-      key: "user-management",
-      icon: <TeamOutlined />,
-      label: "用户管理",
-    },
+    // 只有管理员才能看到项目管理和用户管理
+    ...(isAdmin
+      ? [
+          {
+            key: "project-management",
+            icon: <SettingOutlined />,
+            label: "项目管理",
+          },
+          {
+            key: "user-management",
+            icon: <TeamOutlined />,
+            label: "用户管理",
+          },
+        ]
+      : []),
   ];
 
   const handleMenuClick = ({ key }: { key: string }) => {
@@ -228,7 +237,6 @@ export default function DashboardLayout({
     }
   };
 
-  const user = session?.user as any;
   const userName = user?.name || user?.username || "用户";
   const userEmail = user?.email;
 

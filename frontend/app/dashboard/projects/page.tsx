@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Table,
   Modal,
@@ -25,6 +27,9 @@ import {
 import { projectApi, userApi, type Project, type User } from "@/lib/api";
 
 export default function ProjectsPage() {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const isAdmin = (session as any)?.isAdmin || false;
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,10 +44,20 @@ export default function ProjectsPage() {
   const [userLoading, setUserLoading] = useState(false);
   const [userForm] = Form.useForm();
 
+  // 权限检查：非管理员重定向到首页
+  useEffect(() => {
+    if (session && !isAdmin) {
+      message.warning("您没有权限访问此页面");
+      router.push("/dashboard");
+    }
+  }, [session, isAdmin, router]);
+
   // 加载项目列表
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (isAdmin) {
+      loadProjects();
+    }
+  }, [isAdmin]);
 
   const loadProjects = async () => {
     try {
@@ -290,6 +305,11 @@ export default function ProjectsPage() {
       ),
     },
   ];
+
+  // 如果非管理员，不渲染内容（等待重定向）
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div>

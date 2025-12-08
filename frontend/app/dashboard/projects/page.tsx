@@ -70,7 +70,7 @@ export default function ProjectsPage() {
         // 不显示错误消息，因为会自动跳转
         return;
       }
-      message.error(error instanceof Error ? error.message : "加载项目列表失败");
+      message.error(error instanceof Error ? error.message : "加载项目列表失败了");
     } finally {
       setLoading(false);
     }

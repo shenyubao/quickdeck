@@ -55,8 +55,6 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [jobsInSelectedPath, setJobsInSelectedPath] = useState<Job[]>([]);
   const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [jobResultHtml, setJobResultHtml] = useState<string>("");
@@ -191,10 +189,26 @@ export default function Dashboard() {
       const data = await jobApi.getAll(currentProject.id);
       setJobs(data);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("认证失败")) {
-        return;
+      if (error instanceof Error) {
+        // 如果是认证失败，直接返回（会触发自动登出）
+        if (error.message.includes("认证失败")) {
+          return;
+        }
+        // 如果是权限不足（403），清除当前项目选择，让用户重新选择
+        if (error.message.includes("权限") || error.message.includes("无权限")) {
+          message.warning("您没有访问此项目的权限，已清除项目选择");
+          // 清除 localStorage 中的项目选择
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("currentProject");
+            // 触发项目变化事件，让 layout 重新加载项目列表
+            window.dispatchEvent(new CustomEvent("projectChanged"));
+          }
+          return;
+        }
+        message.error(error.message);
+      } else {
+        message.error("加载工具列表失败");
       }
-      message.error(error instanceof Error ? error.message : "加载工具列表失败");
     } finally {
       setLoading(false);
     }
@@ -223,7 +237,7 @@ export default function Dashboard() {
           const node: TreeNode = {
             key: nodeKey,
             title: part,
-            isLeaf: index === pathParts.length - 1,
+            isLeaf: false, // 路径节点不是叶子节点
             children: [],
           };
 
@@ -248,12 +262,7 @@ export default function Dashboard() {
       // 添加工具节点
       const jobNode: TreeNode = {
         key: `job-${job.id}`,
-        title: (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <CaretRightOutlined style={{ color: "#52c41a", fontSize: 12 }} />
-            <span>{job.name}</span>
-          </div>
-        ),
+        title: job.name,
         isLeaf: true,
         job,
       };
@@ -278,8 +287,6 @@ export default function Dashboard() {
     if (node.job) {
       // 点击工具节点
       setSelectedJob(node.job);
-      setSelectedPath(null);
-      setJobsInSelectedPath([]);
       setJsonSchemaValues({}); // 清空 JSON Schema 值
       // 获取工具详情（包含 workflow）
       try {
@@ -334,24 +341,23 @@ export default function Dashboard() {
         setLoadingDetail(false);
       }
     } else {
-      // 点击路径节点 - 显示路径信息和该路径下的所有工具
+      // 点击路径节点 - 切换展开/收起状态
+      const nodeKey = node.key;
+      setExpandedKeys((prev) => {
+        if (prev.includes(nodeKey)) {
+          // 如果当前已展开，则收起（移除该key及其所有子节点的key）
+          const keysToRemove = getAllKeys(node.children || []);
+          return prev.filter((key) => key !== nodeKey && !keysToRemove.includes(key));
+        } else {
+          // 如果当前已收起，则展开（添加该key）
+          return [...prev, nodeKey];
+        }
+      });
+      // 清空选中状态，不在右侧显示内容
       setSelectedJob(null);
       setJobDetail(null);
       runForm.resetFields();
       setJsonSchemaValues({});
-      
-      // 收集该路径下的所有工具
-      const pathKey = node.key as string;
-      const pathPrefix = pathKey.replace("path-", "");
-      setSelectedPath(pathPrefix);
-      
-      // 获取该路径及其子路径下的所有工具
-      const jobsInPath = jobs.filter((job) => {
-        const jobPath = job.path.startsWith("/") ? job.path.slice(1) : job.path;
-        // 匹配路径前缀，包括直接在该路径下的工具
-        return jobPath === pathPrefix || jobPath.startsWith(pathPrefix + "/");
-      });
-      setJobsInSelectedPath(jobsInPath);
     }
   };
 
@@ -775,9 +781,7 @@ export default function Dashboard() {
                   selectedKeys={
                     selectedJob 
                       ? [`job-${selectedJob.id}`] 
-                      : selectedPath 
-                        ? [`path-${selectedPath}`] 
-                        : []
+                      : []
                   }
                   expandedKeys={expandedKeys}
                   onSelect={handleSelect}
@@ -831,85 +835,7 @@ export default function Dashboard() {
             overflow: "auto",
           }}
         >
-          {selectedPath ? (
-            <div>
-              <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
-                路径: {selectedPath}
-              </Title>
-              <div style={{ marginBottom: 16 }}>
-                <Text type="secondary">
-                  该路径下共有 {jobsInSelectedPath.length} 个工具
-                </Text>
-              </div>
-              {jobsInSelectedPath.length > 0 ? (
-                <div>
-                  <Title level={5} style={{ marginBottom: 16 }}>
-                    工具列表
-                  </Title>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {jobsInSelectedPath.map((job) => (
-                      <div
-                        key={job.id}
-                        style={{
-                          padding: 12,
-                          border: "1px solid #f0f0f0",
-                          borderRadius: 4,
-                          cursor: "pointer",
-                          transition: "all 0.2s",
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = "#1890ff";
-                          e.currentTarget.style.backgroundColor = "#f0f8ff";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = "#f0f0f0";
-                          e.currentTarget.style.backgroundColor = "transparent";
-                        }}
-                        onClick={() => {
-                          // 触发工具节点的选择
-                          const jobNode = treeData
-                            .flatMap((node) => getAllNodes(node))
-                            .find((n) => n.key === `job-${job.id}`);
-                          if (jobNode) {
-                            handleSelect([jobNode.key], { node: jobNode });
-                          }
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <Text strong>{job.name}</Text>
-                            {job.description && (
-                              <div style={{ marginTop: 4 }}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {job.description}
-                                </Text>
-                              </div>
-                            )}
-                          </div>
-                          <Button
-                            type="link"
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/dashboard/jobs?id=${job.id}`);
-                            }}
-                          >
-                            编辑
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <Empty
-                  description="该路径下暂无工具"
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  style={{ marginTop: 50 }}
-                />
-              )}
-            </div>
-          ) : selectedJob ? (
+          {selectedJob ? (
             <Spin spinning={loadingDetail}>
               <div>
                 <div style={{ marginBottom: 16 }}>

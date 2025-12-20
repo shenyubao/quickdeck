@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Layout,
@@ -50,27 +50,67 @@ export default function DashboardLayout({
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentProject, setCurrentProject] = useState<string | null>(
-    externalCurrentProject || null
-  );
+  // 从 localStorage 初始化当前项目（如果有的话）
+  const [currentProject, setCurrentProject] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("currentProject");
+    }
+    return externalCurrentProject || null;
+  });
+  
+  // 使用 ref 防止重复请求
+  const isLoadingRef = useRef(false);
+  const onProjectChangeRef = useRef(onProjectChange);
+  
+  // 同步 onProjectChange ref
+  useEffect(() => {
+    onProjectChangeRef.current = onProjectChange;
+  }, [onProjectChange]);
 
   // 加载项目列表
   const loadProjects = useCallback(async () => {
+    // 防止重复请求
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    isLoadingRef.current = true;
+    
     try {
       setLoading(true);
       const data = await projectApi.getAll();
       setProjects(data);
       
-      // 如果没有当前选中的项目，且项目列表不为空，自动选择第一个项目
-      if (!currentProject && data.length > 0) {
-        const firstProject = data[0].name;
-        setCurrentProject(firstProject);
-        onProjectChange?.(firstProject);
-        // 保存到 localStorage
-        if (typeof window !== "undefined") {
-          localStorage.setItem("currentProject", firstProject);
+      // 验证并设置当前项目
+      setCurrentProject((prev) => {
+        // 如果之前有选中的项目，验证它是否还在有权限的项目列表中
+        if (prev) {
+          const projectExists = data.some((p) => p.name === prev);
+          if (!projectExists) {
+            // 如果项目不在列表中，清除选择
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("currentProject");
+            }
+            onProjectChangeRef.current?.(undefined as any);
+            return null;
+          }
+          // 项目存在，保持选择
+          return prev;
         }
-      }
+        
+        // 如果没有当前选中的项目，且项目列表不为空，自动选择第一个项目
+        if (data.length > 0) {
+          const firstProject = data[0].name;
+          onProjectChangeRef.current?.(firstProject);
+          // 保存到 localStorage
+          if (typeof window !== "undefined") {
+            localStorage.setItem("currentProject", firstProject);
+          }
+          return firstProject;
+        }
+        
+        return null;
+      });
     } catch (error) {
       // 401 错误会触发自动跳转到登录页，不需要显示错误消息
       if (error instanceof Error && error.message.includes("认证失败")) {
@@ -80,8 +120,9 @@ export default function DashboardLayout({
       console.error("加载项目列表失败:", error);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
-  }, [currentProject, onProjectChange]);
+  }, [session]);
 
   useEffect(() => {
     // 只有在用户已登录时才加载项目列表
@@ -122,28 +163,25 @@ export default function DashboardLayout({
     }
     
     const key = getSelectedKey();
+    const isAdmin = (session as any)?.isAdmin || false;
+    
     // 如果没有项目，且选中的是工具相关的菜单，自动切换到项目管理
     if (projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
-      setSelectedMenu("project-management");
-      // 如果不在项目管理页面，则跳转过去
-      if (!pathname?.includes("/projects")) {
-        router.push("/dashboard/projects");
+      // 检查用户是否有权限访问项目管理页面
+      if (isAdmin) {
+        setSelectedMenu("project-management");
+        // 如果不在项目管理页面，则跳转过去
+        if (!pathname?.includes("/projects")) {
+          router.push("/dashboard/projects");
+        }
+      } else {
+        // 非管理员用户没有项目时，显示空状态即可，不跳转
+        setSelectedMenu(key);
       }
     } else {
       setSelectedMenu(key);
     }
   }, [pathname, projects.length, session, router]);
-
-  // 当离开项目管理页面时，刷新项目列表（以便获取最新创建的项目）
-  useEffect(() => {
-    if (!pathname?.includes("/projects")) {
-      // 延迟刷新，避免频繁请求
-      const timer = setTimeout(() => {
-        loadProjects();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [pathname, loadProjects]);
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/" });

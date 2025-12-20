@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -43,6 +43,9 @@ export default function ProjectsPage() {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [userLoading, setUserLoading] = useState(false);
   const [userForm] = Form.useForm();
+  
+  // 使用 ref 防止重复请求
+  const isLoadingRef = useRef(false);
 
   // 权限检查：非管理员重定向到首页
   useEffect(() => {
@@ -53,13 +56,14 @@ export default function ProjectsPage() {
   }, [session, isAdmin, router]);
 
   // 加载项目列表
-  useEffect(() => {
-    if (isAdmin) {
-      loadProjects();
+  const loadProjects = useCallback(async () => {
+    // 防止重复请求
+    if (isLoadingRef.current) {
+      return;
     }
-  }, [isAdmin]);
-
-  const loadProjects = async () => {
+    
+    isLoadingRef.current = true;
+    
     try {
       setLoading(true);
       const data = await projectApi.getAll();
@@ -73,8 +77,15 @@ export default function ProjectsPage() {
       message.error(error instanceof Error ? error.message : "加载项目列表失败了");
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
-  };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadProjects();
+    }
+  }, [isAdmin, loadProjects]);
 
   // 项目管理相关函数
   const handleAddProject = () => {

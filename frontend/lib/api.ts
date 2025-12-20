@@ -53,7 +53,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 
     return headers;
   } catch (error) {
-    console.error("获取认证头失败:", error);
+    console.error("[API] 获取认证头失败:", error);
     return {
       "Content-Type": "application/json",
     };
@@ -78,7 +78,7 @@ async function handleUnauthorized() {
 /**
  * 处理 API 响应
  */
-async function handleResponse<T>(response: Response): Promise<T> {
+async function handleResponse<T>(response: Response, url?: string): Promise<T> {
   if (!response.ok) {
     const errorText = await response.text();
     let errorMessage = "操作失败";
@@ -90,14 +90,16 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorMessage = errorText || errorMessage;
     }
     
-    // 如果是 401 未授权或 403 权限不足，自动登出并跳转到登录页
-    if (response.status === 401 || response.status === 403) {
+    // 如果是 401 未授权，自动登出并跳转到登录页
+    if (response.status === 401) {
       await handleUnauthorized();
-      if (response.status === 401) {
-        errorMessage = "认证失败，请重新登录";
-      } else {
-        errorMessage = "您没有访问此页面的权限，请重新登录";
-      }
+      errorMessage = "认证失败，请重新登录";
+    }
+    // 如果是 403 权限不足，不自动登出，只返回错误信息（让调用方处理）
+    // 403 可能是用户没有访问某个资源的权限，但不一定是认证问题
+    if (response.status === 403) {
+      // 不自动登出，只设置错误消息
+      errorMessage = errorMessage || "您没有访问此资源的权限";
     }
     
     // 如果是 413 Payload Too Large，提示用户数据太大
@@ -285,7 +287,7 @@ export const jobApi = {
         credentials: "include",
       });
       
-      return handleResponse<Job[]>(response);
+      return handleResponse<Job[]>(response, url);
     } catch (error) {
       console.error("API 请求错误:", error);
       if (error instanceof TypeError) {
@@ -504,8 +506,6 @@ export const projectApi = {
       const headers = await getAuthHeaders();
       const apiUrl = getApiUrlValue();
       const url = `${apiUrl}/api/projects`;
-      console.log("请求 URL:", url);
-      console.log("请求头:", headers);
       
       const response = await fetch(url, {
         method: "GET",
@@ -513,9 +513,7 @@ export const projectApi = {
         credentials: "include", // 包含 cookies
       });
       
-      console.log("响应状态:", response.status, response.statusText);
-      
-      return handleResponse<Project[]>(response);
+      return handleResponse<Project[]>(response, url);
     } catch (error) {
       console.error("API 请求错误:", error);
       if (error instanceof TypeError) {

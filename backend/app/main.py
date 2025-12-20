@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.routers import auth, projects, jobs, executions, credentials, users, upload
 from app.init_db import init_db
+from app.config import settings
 from alembic.config import Config
 from alembic import command
 import os
@@ -169,32 +170,67 @@ app.include_router(upload.router)
 @app.on_event("startup")
 async def startup_event():
     """应用启动时运行数据库迁移并初始化数据"""
+    from app.database import engine
+    from sqlalchemy import text
+    
     # 等待数据库就绪
     max_retries = 30
     retry_count = 0
     
-    # 运行 Alembic 迁移
+    # 先检查数据库连接
+    logger.info("检查数据库连接...")
     while retry_count < max_retries:
         try:
-            # 获取 Alembic 配置
-            alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-            # 运行迁移
-            command.upgrade(alembic_cfg, "head")
-            print("数据库迁移成功")
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.info("数据库连接成功")
             break
         except Exception as e:
             retry_count += 1
             if retry_count >= max_retries:
-                print(f"数据库迁移失败（已重试 {max_retries} 次）: {e}")
+                error_msg = f"数据库连接失败（已重试 {max_retries} 次）: {e}"
+                logger.error(error_msg)
+                logger.error(f"数据库 URL: {settings.database_url}")
                 raise
-            print(f"等待数据库就绪... ({retry_count}/{max_retries})")
+            logger.warning(f"等待数据库就绪... ({retry_count}/{max_retries}) - 错误: {str(e)}")
+            time.sleep(2)
+    
+    # 运行 Alembic 迁移
+    retry_count = 0
+    logger.info("开始运行数据库迁移...")
+    while retry_count < max_retries:
+        try:
+            # 获取 Alembic 配置
+            alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+            # 检查是否有多个 head 版本
+            from alembic.script import ScriptDirectory
+            script = ScriptDirectory.from_config(alembic_cfg)
+            heads = script.get_revisions("heads")
+            
+            # 如果有多个 head，使用 heads（复数），否则使用 head（单数）
+            target = "heads" if len(heads) > 1 else "head"
+            logger.info(f"检测到 {len(heads)} 个 head 版本，使用目标: {target}")
+            
+            # 运行迁移
+            command.upgrade(alembic_cfg, target)
+            logger.info("数据库迁移成功")
+            break
+        except Exception as e:
+            retry_count += 1
+            if retry_count >= max_retries:
+                error_msg = f"数据库迁移失败（已重试 {max_retries} 次）: {e}"
+                logger.error(error_msg)
+                logger.error(f"错误类型: {type(e).__name__}")
+                logger.error(f"错误详情: {traceback.format_exc()}")
+                raise
+            logger.warning(f"数据库迁移重试... ({retry_count}/{max_retries}) - 错误: {str(e)}")
             time.sleep(2)
     
     # 初始化测试数据（如果数据库为空）
     try:
         init_db()
     except Exception as e:
-        print(f"测试数据初始化失败（可能已存在）: {e}")
+        print(f"测试数据初始化失败  : {e}")
 
 
 @app.get("/")

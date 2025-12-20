@@ -98,13 +98,14 @@ class JobBase(BaseModel):
 
 # Option 相关 schemas
 class OptionCreate(BaseModel):
-    option_type: str  # "text", "date", "number", "file", "credential"
+    option_type: str  # "text", "date", "number", "file", "credential", "json_schema"
     name: str
     display_name: Optional[str] = None
     description: Optional[str] = None
     default_value: Optional[str] = None
     required: bool = False
     credential_type: Optional[str] = None  # 凭证类型（当option_type为credential时使用）
+    json_schema: Optional[str] = None  # Json Schema描述（当option_type为json_schema时使用）
 
 
 # Step 相关 schemas
@@ -147,6 +148,7 @@ class OptionResponse(BaseModel):
     default_value: Optional[str] = None
     required: bool
     credential_type: Optional[str] = None  # 凭证类型（当option_type为credential时使用）
+    json_schema: Optional[str] = None  # Json Schema描述（当option_type为json_schema时使用）
     
     class Config:
         from_attributes = True

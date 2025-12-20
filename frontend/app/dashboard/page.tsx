@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -34,6 +34,7 @@ import {
   CaretDownOutlined,
 } from "@ant-design/icons";
 import { jobApi, projectApi, credentialApi, uploadApi, type Job, type Project, type JobDetail, type OptionResponse, type Credential } from "@/lib/api";
+import JsonSchemaForm, { type JsonSchemaFormRef } from "./jobs/components/JsonSchemaForm";
 
 const { Content, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -67,6 +68,10 @@ export default function Dashboard() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
+  // 存储 JSON Schema 表单的值
+  const [jsonSchemaValues, setJsonSchemaValues] = useState<Record<string, any>>({});
+  // 存储 JSON Schema 表单的 ref
+  const jsonSchemaFormRefs = React.useRef<Record<string, JsonSchemaFormRef | null>>({});
 
   // 获取所有节点的 keys（用于展开全部）
   const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
@@ -275,6 +280,7 @@ export default function Dashboard() {
       setSelectedJob(node.job);
       setSelectedPath(null);
       setJobsInSelectedPath([]);
+      setJsonSchemaValues({}); // 清空 JSON Schema 值
       // 获取工具详情（包含 workflow）
       try {
         setLoadingDetail(true);
@@ -332,6 +338,7 @@ export default function Dashboard() {
       setSelectedJob(null);
       setJobDetail(null);
       runForm.resetFields();
+      setJsonSchemaValues({});
       
       // 收集该路径下的所有工具
       const pathKey = node.key as string;
@@ -518,7 +525,18 @@ export default function Dashboard() {
     if (!selectedJob || !jobDetail) return;
     
     try {
+      // 验证普通表单
       const values = await runForm.validateFields();
+      
+      // 验证所有 JSON Schema 表单
+      const jsonSchemaValidations = Object.keys(jsonSchemaFormRefs.current).map(async (key) => {
+        const ref = jsonSchemaFormRefs.current[key];
+        if (ref) {
+          await ref.validate();
+        }
+      });
+      
+      await Promise.all(jsonSchemaValidations);
       
       // 处理参数格式
       const args: Record<string, any> = {};
@@ -535,6 +553,13 @@ export default function Dashboard() {
             // Form.Item 已经处理了多值输入的转换，这里直接使用
             args[key] = value;
           }
+        }
+      });
+
+      // 合并 JSON Schema 表单的值
+      Object.keys(jsonSchemaValues).forEach((key) => {
+        if (jsonSchemaValues[key] !== undefined && jsonSchemaValues[key] !== null) {
+          args[key] = jsonSchemaValues[key];
         }
       });
 
@@ -570,13 +595,13 @@ export default function Dashboard() {
       
       message.success("工具运行完成");
     } catch (error) {
-      if (error instanceof Error && error.message.includes("验证")) {
-        return;
+      // 验证失败时不需要显示额外的错误消息，由表单自己显示
+      if (error instanceof Error && !error.message.includes("验证")) {
+        const errorMessage = error.message;
+        message.error(errorMessage);
+        setRunError(errorMessage);
+        setJobResultHtml("");
       }
-      const errorMessage = error instanceof Error ? error.message : "运行失败";
-      message.error(errorMessage);
-      setRunError(errorMessage);
-      setJobResultHtml("");
     } finally {
       setRunning(false);
     }
@@ -597,7 +622,41 @@ export default function Dashboard() {
 
   // 根据参数类型渲染输入组件
   const renderOptionInput = (option: OptionResponse) => {
-    const { option_type, credential_type } = option;
+    const { option_type, credential_type, json_schema } = option;
+    
+    // 如果是 json_schema 类型，使用 JsonSchemaForm 组件
+    if (option_type === "json_schema") {
+      let parsedSchema = null;
+      try {
+        parsedSchema = typeof json_schema === "string"
+          ? JSON.parse(json_schema)
+          : json_schema;
+      } catch (e) {
+        console.error("JSON Schema 解析失败:", e);
+      }
+      
+      if (!parsedSchema) {
+        return <div style={{ color: "red" }}>JSON Schema 无效</div>;
+      }
+      
+      return (
+        <JsonSchemaForm
+          ref={(ref) => {
+            if (ref) {
+              jsonSchemaFormRefs.current[option.name] = ref;
+            }
+          }}
+          schema={parsedSchema}
+          value={jsonSchemaValues[option.name]}
+          onChange={(value) => {
+            setJsonSchemaValues((prev) => ({
+              ...prev,
+              [option.name]: value,
+            }));
+          }}
+        />
+      );
+    }
     
     switch (option_type) {
       case "date":
@@ -905,31 +964,55 @@ export default function Dashboard() {
                     layout="vertical"
                     style={{ maxWidth: 600 }}
                   >
-                    {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => (
-                      <Form.Item
-                        key={option.id}
-                        name={option.name}
-                        label={
-                          <div>
-                            <Text strong>{option.display_name || option.name}</Text>
-                            {option.required && (
-                              <Text type="danger" style={{ marginLeft: 4 }}>
-                                *
-                              </Text>
+                    {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => {
+                      // 如果是 json_schema 类型，直接渲染，不使用 Form.Item
+                      if (option.option_type === "json_schema") {
+                        return (
+                          <div key={option.id} style={{ marginBottom: "24px" }}>
+                            <div style={{ marginBottom: "8px" }}>
+                              <Text strong>{option.display_name || option.name}</Text>
+                              {option.required && (
+                                <Text type="danger" style={{ marginLeft: 4 }}>
+                                  *
+                                </Text>
+                              )}
+                            </div>
+                            {option.description && (
+                              <div style={{ marginBottom: "8px", color: "#666", fontSize: "12px" }}>
+                                {option.description}
+                              </div>
                             )}
+                            {renderOptionInput(option)}
                           </div>
-                        }
-                        tooltip={option.description}
-                        rules={[
-                          {
-                            required: option.required,
-                            message: `请输入${option.display_name || option.name}`,
-                          },
-                        ]}
-                      >
-                        {renderOptionInput(option)}
-                      </Form.Item>
-                    ))}
+                        );
+                      }
+                      
+                      return (
+                        <Form.Item
+                          key={option.id}
+                          name={option.name}
+                          label={
+                            <div>
+                              <Text strong>{option.display_name || option.name}</Text>
+                              {option.required && (
+                                <Text type="danger" style={{ marginLeft: 4 }}>
+                                  *
+                                </Text>
+                              )}
+                            </div>
+                          }
+                          tooltip={option.description}
+                          rules={[
+                            {
+                              required: option.required,
+                              message: `请输入${option.display_name || option.name}`,
+                            },
+                          ]}
+                        >
+                          {renderOptionInput(option)}
+                        </Form.Item>
+                      );
+                    })}
                   </Form>
                   <div style={{ marginTop: 16, textAlign: "right" }}>
                     <Button

@@ -1,67 +1,13 @@
 # QuickDeck
 
-这是一个使用 monorepo 架构的项目，包含前端和后端应用。
-
-## 项目结构
-
-```
-quickdeck/
-├── frontend/          # 前端应用（Next.js + Ant Design v6 + auth.js）
-├── backend/           # 后端应用（FastAPI + SQLAlchemy + Alembic）
-├── docker-compose.yml # Docker Compose 配置
-├── Makefile          # 便捷命令脚本
-└── README.md          # 项目说明
-```
-
-## 技术栈
-
-### 前端
-- Next.js 16
-- React 19
-- Ant Design v6
-- auth.js (NextAuth.js v5)
-- TypeScript
-- Tailwind CSS
-
-### 后端
-- Python 3.12.11
-- FastAPI (>=0.115.14,<0.116.0)
-- SQLAlchemy (>=2.0.0,<3.0.0)
-- Alembic (>=1.13.0,<2.0.0)
-- Pydantic
-- Poetry
-
-### 基础设施
-- Docker & Docker Compose
-- PostgreSQL 16
-
 ## 快速开始
 
-### 前置要求
-
-- Docker 和 Docker Compose
-- Node.js 20+ (本地开发)
-- Python 3.12.11+ (本地开发)
-- Poetry (本地开发)
-
-### 使用 Docker Compose（推荐）
-
-1. 克隆项目并进入目录
-
+### 启动服务
 ```bash
-cd quickdeck
-```
-
-2. 配置环境变量
-
-```bash
-# 后端环境变量
 cp backend/.env.example backend/.env
-# 编辑 backend/.env 文件，修改数据库连接等配置
-
-# 前端环境变量
 cp frontend/.env.example frontend/.env.local
-# 编辑 frontend/.env.local 文件，修改 NEXTAUTH_SECRET 等配置
+
+
 ```
 
 3. 启动所有服务
@@ -83,55 +29,118 @@ docker-compose up --build --progress=plain
 
 ### 本地开发
 
-#### 后端
+有两种开发模式：
+
+#### 模式 1：混合开发模式（推荐）
+
+在这种模式下，数据库和 nginx 在 Docker 容器中运行，后端和前端直接在本地运行，便于开发和调试。
 
 1. 安装依赖
+
+```bash
+make install
+```
+
+2. 配置环境变量
+
+```bash
+# 后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 文件
+
+# 前端环境变量
+cp frontend/.env.example frontend/.env.local
+# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+3. 启动基础服务（数据库和 nginx）
+
+```bash
+make dev-base
+```
+
+4. 运行数据库迁移
+
+```bash
+make migrate-upgrade
+```
+
+5. 启动后端服务（新终端窗口）
+
+```bash
+make dev-backend
+```
+
+6. 启动前端服务（新终端窗口）
+
+```bash
+make dev-frontend
+```
+
+访问应用：
+- 前端: http://localhost（通过 nginx 代理）
+- 后端 API: http://localhost:8000（直接访问）或 http://localhost/api（通过 nginx 代理）
+- API 文档: http://localhost:8000/docs
+- 数据库: localhost:5432
+
+#### 模式 2：完全本地开发
+
+所有服务都在本地运行，不使用 Docker。
+
+1. 安装依赖
+
+```bash
+make install
+```
+
+2. 配置环境变量
+
+```bash
+# 后端环境变量
+cp backend/.env.example backend/.env
+# 编辑 backend/.env 文件，确保 DATABASE_URL 指向本地 PostgreSQL
+
+# 前端环境变量
+cp frontend/.env.example frontend/.env.local
+# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+3. 启动本地 PostgreSQL 数据库
+
+```bash
+# 需要本地安装 PostgreSQL，或使用 Docker 启动数据库
+docker run -d --name quickdeck-db \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=quickdeck \
+  -p 5432:5432 \
+  postgres:16-alpine
+```
+
+4. 运行数据库迁移
+
+```bash
+make migrate-upgrade
+```
+
+5. 启动后端服务
 
 ```bash
 cd backend
-poetry install
+poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-2. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env 文件
-```
-
-3. 运行数据库迁移
-
-```bash
-poetry run alembic upgrade head
-```
-
-4. 启动开发服务器
-
-```bash
-poetry run uvicorn app.main:app --reload
-```
-
-#### 前端
-
-1. 安装依赖
+6. 启动前端服务（新终端窗口）
 
 ```bash
 cd frontend
-npm install
-```
-
-2. 配置环境变量
-
-```bash
-cp .env.example .env.local
-# 编辑 .env.local 文件
-```
-
-3. 启动开发服务器
-
-```bash
 npm run dev
 ```
+
+访问应用：
+- 前端: http://localhost:3000
+- 后端 API: http://localhost:8000
+- API 文档: http://localhost:8000/docs
 
 ## 常用命令
 
@@ -159,6 +168,161 @@ poetry run alembic upgrade head
 
 # 回滚迁移
 poetry run alembic downgrade -1
+```
+
+## 生产环境部署
+
+### 前置要求
+
+- Docker 和 Docker Compose
+- 已构建的 Docker 镜像（或从 Docker Hub 拉取）
+
+### 配置生产环境
+
+1. 配置前端环境变量
+
+```bash
+# 创建并编辑 frontend/.env.local 文件
+cp frontend/.env.example frontend/.env.local
+# 编辑 frontend/.env.local，配置以下必需变量：
+# - NODE_ENV=production
+# - NEXTAUTH_URL=<你的生产环境URL>
+# - NEXTAUTH_SECRET=<强随机密钥>
+# - NEXT_PUBLIC_API_URL=<API访问地址>
+```
+
+2. 配置后端环境变量（如需要）
+
+```bash
+# 创建并编辑 backend/.env 文件
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，配置数据库连接等
+```
+
+### 启动生产环境
+
+```bash
+# 使用生产环境配置文件启动
+docker-compose -f docker-compose.prod.yml up -d
+
+# 查看服务状态
+docker-compose -f docker-compose.prod.yml ps
+
+# 查看日志
+docker-compose -f docker-compose.prod.yml logs -f
+```
+
+### 生产环境运维命令
+
+#### 服务管理
+
+```bash
+# 启动所有服务
+docker-compose -f docker-compose.prod.yml up -d
+
+# 停止所有服务
+docker-compose -f docker-compose.prod.yml down
+
+# 重启所有服务
+docker-compose -f docker-compose.prod.yml restart
+
+# 重启特定服务
+docker-compose -f docker-compose.prod.yml restart frontend
+docker-compose -f docker-compose.prod.yml restart backend
+docker-compose -f docker-compose.prod.yml restart nginx
+
+# 查看服务状态
+docker-compose -f docker-compose.prod.yml ps
+
+# 查看服务资源使用情况
+docker stats
+```
+
+#### 日志管理
+
+```bash
+# 查看所有服务日志
+docker-compose -f docker-compose.prod.yml logs -f
+
+# 查看特定服务日志
+docker-compose -f docker-compose.prod.yml logs -f frontend
+docker-compose -f docker-compose.prod.yml logs -f backend
+docker-compose -f docker-compose.prod.yml logs -f nginx
+
+# 查看最近 100 行日志
+docker-compose -f docker-compose.prod.yml logs --tail=100
+
+# 查看最近 1 小时的日志
+docker-compose -f docker-compose.prod.yml logs --since 1h
+```
+
+#### 更新和部署
+
+```bash
+# 拉取最新镜像
+docker pull ssybb1988/quickdeck-backend:latest
+docker pull ssybb1988/quickdeck-frontend:latest
+
+# 更新服务（拉取新镜像后）
+docker-compose -f docker-compose.prod.yml up -d --pull always
+
+# 重新构建并启动（如果使用本地构建）
+docker-compose -f docker-compose.prod.yml up -d --build
+
+# 更新特定服务
+docker-compose -f docker-compose.prod.yml up -d --no-deps frontend
+docker-compose -f docker-compose.prod.yml up -d --no-deps backend
+```
+
+#### 数据库管理
+
+```bash
+# 进入数据库容器
+docker exec -it quickdeck-db psql -U postgres -d quickdeck
+
+# 执行数据库迁移（在 backend 容器中）
+docker exec -it quickdeck-backend poetry run alembic upgrade head
+
+# 备份数据库
+docker exec quickdeck-db pg_dump -U postgres quickdeck > backup_$(date +%Y%m%d_%H%M%S).sql
+
+# 恢复数据库
+docker exec -i quickdeck-db psql -U postgres quickdeck < backup_file.sql
+```
+
+#### 健康检查和故障排查
+
+```bash
+# 检查容器健康状态
+docker-compose -f docker-compose.prod.yml ps
+
+# 进入容器进行调试
+docker exec -it quickdeck-frontend sh
+docker exec -it quickdeck-backend bash
+docker exec -it quickdeck-nginx sh
+
+# 检查网络连接
+docker network inspect quickdeck_quickdeck-network
+
+# 检查端口占用
+netstat -tulpn | grep 11126
+netstat -tulpn | grep 5432
+```
+
+#### 清理和维护
+
+```bash
+# 清理未使用的镜像和容器
+docker system prune -a
+
+# 清理未使用的卷（谨慎使用，会删除数据）
+docker volume prune
+
+# 查看磁盘使用情况
+docker system df
+
+# 查看特定服务的资源使用
+docker stats quickdeck-frontend quickdeck-backend quickdeck-nginx quickdeck-db
 ```
 
 ## 开发指南

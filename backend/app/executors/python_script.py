@@ -246,7 +246,11 @@ class PythonScriptExecutor(StepExecutor):
             "except Exception as e:",
             "    import traceback",
             "    error_msg = f'执行 execute 函数时出错: {str(e)}\\n{traceback.format_exc()}'",
+            "    # 保留 initial_result 中的所有字段，特别是 logs",
             "    result = {**initial_result, 'text': error_msg, 'dataset': None}",
+            "    # 确保 logs 字段存在（如果 initial_result 中没有，则初始化为空字符串）",
+            "    if 'logs' not in result:",
+            "        result['logs'] = ''",
             "    print('__RESULT_START__')",
             "    print(json.dumps(result, ensure_ascii=False))",
             "    print('__RESULT_END__')",
@@ -306,11 +310,21 @@ class PythonScriptExecutor(StepExecutor):
                         try:
                             # 解析 result JSON 并更新 result 对象
                             script_result = json.loads(result_part)
-                            # 更新 result 对象（保留 logs）
+                            # 保存当前的 logs（在 update 之前）
                             current_logs = result.get("logs", "")
+                            # 如果 script_result 中也有 logs，需要合并
+                            script_logs = script_result.get("logs", "")
+                            # 更新 result 对象
                             result.update(script_result)
-                            # 恢复 logs（因为 update 可能会覆盖）
-                            result["logs"] = current_logs
+                            # 合并 logs：先保留当前日志，然后添加脚本返回的日志
+                            if current_logs and script_logs:
+                                result["logs"] = f"{current_logs}\n{script_logs}".strip()
+                            elif current_logs:
+                                result["logs"] = current_logs
+                            elif script_logs:
+                                result["logs"] = script_logs
+                            else:
+                                result["logs"] = result.get("logs", "")
                         except json.JSONDecodeError as e:
                             raise RuntimeError(f"无法解析脚本返回的 result JSON: {str(e)}\n原始输出: {output}\n结果部分: {result_part}")
                 else:
@@ -324,9 +338,16 @@ class PythonScriptExecutor(StepExecutor):
                 current_logs = result.get("logs", "")
                 result["logs"] = f"{current_logs}\n[错误]\n{error}".strip() if current_logs else f"[错误]\n{error}"
             
-            # 如果脚本执行失败，抛出异常
+            # 如果脚本执行失败，抛出异常（但保留已解析的 result，包括 logs）
             if process.returncode != 0:
-                raise RuntimeError(f"脚本执行失败，返回码: {process.returncode}\n{error}")
+                # 确保错误信息也被添加到日志中（如果还没有的话）
+                error_msg = f"脚本执行失败，返回码: {process.returncode}"
+                if error:
+                    error_msg = f"{error_msg}\n{error}"
+                current_logs = result.get("logs", "")
+                if error_msg not in current_logs:
+                    result["logs"] = f"{current_logs}\n[执行失败] {error_msg}".strip() if current_logs else f"[执行失败] {error_msg}"
+                raise RuntimeError(error_msg)
             
         except subprocess.TimeoutExpired:
             logger.error(f"脚本执行超时: script_path={script_path}")

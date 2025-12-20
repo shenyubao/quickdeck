@@ -12,17 +12,23 @@ const getServerApiUrl = () => {
   
   const publicUrl = process.env.NEXT_PUBLIC_API_URL;
   
-  // 如果 NEXT_PUBLIC_API_URL 为空（通过 nginx 代理），服务端使用 Docker 内部网络
+  // 如果 NEXT_PUBLIC_API_URL 为空（通过 nginx 代理）
   if (!publicUrl || publicUrl.trim() === "") {
-    return "http://backend:8000";
+    // 检查是否在 Docker 容器内（通过检查环境变量或文件系统）
+    // 如果在容器内，使用 Docker 内部网络名称；否则使用 localhost
+    const isInDocker = process.env.DOCKER_CONTAINER === "true" || 
+                       (typeof process.env.NODE_ENV !== "undefined" && 
+                        process.env.NODE_ENV === "production" &&
+                        !publicUrl);
+    return isInDocker ? "http://backend:8000" : "http://localhost:8000";
   }
   
-  // 如果在 Docker 环境中（有 NEXT_PUBLIC_API_URL 且包含 localhost），使用 backend
+  // 如果 NEXT_PUBLIC_API_URL 包含 localhost，说明是本地开发，服务端也使用 localhost
   if (publicUrl.includes("localhost")) {
-    // 服务端在 Docker 容器内，使用内部网络名称
-    return publicUrl.replace("localhost", "backend");
+    return "http://localhost:8000";
   }
   
+  // 其他情况直接使用 publicUrl
   return publicUrl || "http://localhost:8000";
 };
 

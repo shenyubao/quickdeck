@@ -30,6 +30,7 @@ import re
 import zipfile
 import tempfile
 import shutil
+from datetime import datetime
 from typing import Optional, Tuple, Any
 from typing import Final
 
@@ -631,7 +632,9 @@ def execute(args: dict) -> tuple:
                     csv_bytes = csv_content.encode('utf-8')
                     
                     # 4. 上传到 OSS
-                    oss_key = dst_prefix + csv_rel_path
+                    # 获取当前日期（格式：YYYYMMDD）
+                    current_date = datetime.now().strftime('%Y%m%d')
+                    oss_key = dst_prefix + current_date + '/' + csv_rel_path
                     print(f"  上传到 OSS: {oss_key}")
                     
                     success = upload_to_oss(bucket, oss_key, csv_bytes)

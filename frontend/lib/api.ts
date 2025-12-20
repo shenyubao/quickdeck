@@ -150,13 +150,14 @@ export interface Job {
 
 // Option 相关类型
 export interface OptionCreate {
-  option_type: "text" | "date" | "number" | "file" | "credential";
+  option_type: "text" | "date" | "number" | "file" | "credential" | "json_schema";
   name: string;
   display_name?: string;
   description?: string;
   default_value?: string;
   required?: boolean;
   credential_type?: string; // 凭证类型（当option_type为credential时使用）
+  json_schema?: string; // Json Schema描述（当option_type为json_schema时使用）
 }
 
 // Step 相关类型
@@ -176,13 +177,14 @@ export interface NotificationCreate {
 // Option 响应类型
 export interface OptionResponse {
   id: number;
-  option_type: "text" | "date" | "number" | "file" | "credential";
+  option_type: "text" | "date" | "number" | "file" | "credential" | "json_schema";
   name: string;
   display_name?: string;
   description?: string;
   default_value?: string;
   required: boolean;
   credential_type?: string; // 凭证类型（当option_type为credential时使用）
+  json_schema?: string; // Json Schema描述（当option_type为json_schema时使用）
 }
 
 // Step 响应类型

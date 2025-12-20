@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional, Dict, Any
 import logging
+import ast
 from app.database import get_db
 from app.models import (
     Job, Project, User, Workflow, Option, Step, project_users,
@@ -19,6 +20,78 @@ def check_project_permission(project: Project, current_user: User) -> bool:
     if project.owner_id == current_user.id:
         return True
     return current_user.id in [u.id for u in project.accessible_users]
+
+
+def validate_python_script(script: str) -> None:
+    """
+    验证 Python 脚本是否包含正确的 execute 函数签名及返回
+    
+    要求:
+    - 必须定义 execute 函数
+    - execute 函数必须接受 args 参数（可以是 args 或 args: dict）
+    - execute 函数应该返回元组（建议有 -> tuple 类型注解，但不是必须的）
+    
+    Raises:
+        ValueError: 如果脚本不符合要求
+    """
+    if not script or not script.strip():
+        raise ValueError("Python 脚本内容不能为空")
+    
+    try:
+        # 解析 Python 代码
+        tree = ast.parse(script, mode='exec')
+    except SyntaxError as e:
+        raise ValueError(f"Python 脚本语法错误: {str(e)}")
+    
+    # 查找 execute 函数
+    execute_func = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "execute":
+            execute_func = node
+            break
+    
+    if execute_func is None:
+        raise ValueError(
+            "Python 脚本中必须定义 execute 函数。\n"
+            "示例:\n"
+            "def execute(args: dict) -> tuple:\n"
+            "    # 你的代码\n"
+            "    return (result_text, dataset)"
+        )
+    
+    # 检查函数参数
+    if len(execute_func.args.args) == 0:
+        raise ValueError(
+            "execute 函数必须接受 args 参数。\n"
+            "正确的函数签名: def execute(args: dict) -> tuple:"
+        )
+    
+    # 检查第一个参数是否为 args
+    first_arg = execute_func.args.args[0]
+    if first_arg.arg != "args":
+        raise ValueError(
+            f"execute 函数的第一个参数必须是 'args'，但当前是 '{first_arg.arg}'。\n"
+            "正确的函数签名: def execute(args: dict) -> tuple:"
+        )
+    
+    # 检查返回类型注解（可选，但建议有）
+    if execute_func.returns is None:
+        logger.warning(
+            "execute 函数建议添加返回类型注解 -> tuple，"
+            "例如: def execute(args: dict) -> tuple:"
+        )
+    elif not isinstance(execute_func.returns, ast.Name) or execute_func.returns.id != "tuple":
+        # 允许其他返回类型注解，但建议是 tuple
+        # 尝试获取返回类型名称
+        return_type_name = "非tuple类型"
+        if isinstance(execute_func.returns, ast.Name):
+            return_type_name = execute_func.returns.id
+        elif isinstance(execute_func.returns, ast.Constant):
+            return_type_name = str(execute_func.returns.value)
+        logger.warning(
+            f"execute 函数返回类型注解为 {return_type_name}，"
+            "建议使用 -> tuple"
+        )
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 security = HTTPBearer()
@@ -176,6 +249,7 @@ async def get_job_detail(
                     "default_value": opt.default_value,
                     "required": opt.required,
                     "credential_type": opt.credential_type,
+                    "json_schema": opt.json_schema,
                 }
                 for opt in workflow.options
             ],
@@ -314,7 +388,8 @@ async def create_job(
                 description=option_data.description,
                 default_value=option_data.default_value,
                 required=option_data.required,
-                credential_type=option_data.credential_type
+                credential_type=option_data.credential_type,
+                json_schema=option_data.json_schema
             )
             db.add(option)
         
@@ -328,6 +403,23 @@ async def create_job(
                 StepTypeEnum(step_type_str)
             except ValueError:
                 raise ValueError(f"无效的 step_type: {step_data.step_type}，支持的值: {[e.value for e in StepTypeEnum]}")
+            
+            # 如果是 Python 脚本类型，验证脚本内容
+            if step_type_str == StepTypeEnum.PYTHON_SCRIPT.value:
+                extension = step_data.extension or {}
+                script = extension.get("script", "")
+                if not script:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Python 脚本步骤的 extension.script 不能为空"
+                    )
+                try:
+                    validate_python_script(script)
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(e)
+                    )
             
             step = Step(
                 workflow_id=workflow.id,
@@ -469,7 +561,8 @@ async def update_job(
                 description=option_data.description,
                 default_value=option_data.default_value,
                 required=option_data.required,
-                credential_type=option_data.credential_type
+                credential_type=option_data.credential_type,
+                json_schema=option_data.json_schema
             )
             db.add(option)
         
@@ -483,6 +576,23 @@ async def update_job(
                 StepTypeEnum(step_type_str)
             except ValueError:
                 raise ValueError(f"无效的 step_type: {step_data.step_type}，支持的值: {[e.value for e in StepTypeEnum]}")
+            
+            # 如果是 Python 脚本类型，验证脚本内容
+            if step_type_str == StepTypeEnum.PYTHON_SCRIPT.value:
+                extension = step_data.extension or {}
+                script = extension.get("script", "")
+                if not script:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Python 脚本步骤的 extension.script 不能为空"
+                    )
+                try:
+                    validate_python_script(script)
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=str(e)
+                    )
             
             step = Step(
                 workflow_id=workflow.id,

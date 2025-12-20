@@ -32,6 +32,7 @@ class OptionTypeEnum(str, enum.Enum):
     NUMBER = "number"
     FILE = "file"
     CREDENTIAL = "credential"  # 授权凭证
+    JSON_SCHEMA = "json_schema"  # Json Schema
 
 
 class StepTypeEnum(str, enum.Enum):
@@ -198,13 +199,14 @@ class Option(BaseModel):
     __tablename__ = "options"
     
     workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, comment="所属工作流")
-    option_type = Column(String, nullable=False, comment="选项类型(文本/日期/数字/文件/凭证)")
+    option_type = Column(String, nullable=False, comment="选项类型(文本/日期/数字/文件/凭证/Json Schema)")
     name = Column(String, nullable=False, comment="选项名称")
     display_name = Column(String, comment="选项显示名")
     description = Column(Text, comment="选项描述")
     default_value = Column(Text, comment="默认值")
     required = Column(Boolean, default=False, comment="是否必需")
     credential_type = Column(String, nullable=True, comment="凭证类型（当option_type为credential时使用）")
+    json_schema = Column(Text, nullable=True, comment="Json Schema描述（当option_type为json_schema时使用）")
     
     # 关系
     workflow = relationship("Workflow", back_populates="options", foreign_keys=[workflow_id])

@@ -1,0 +1,69 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: quickdeck-nginx
+    ports:
+      - "11126:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - quickdeck-network
+    restart: unless-stopped
+
+  backend:
+    image: ssybb1988/quickdeck-backend:latest
+    container_name: quickdeck-backend
+    volumes:
+      - ./backend:/app
+      - backend-data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/quickdeck
+    depends_on:
+      - db
+    networks:
+      - quickdeck-network
+
+  frontend:
+    image: ssybb1988/quickdeck-frontend:latest
+    container_name: quickdeck-frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      - API_URL=http://backend:8000
+      # 其他环境变量（NODE_ENV, NEXTAUTH_URL, NEXTAUTH_SECRET, NEXT_PUBLIC_API_URL 等）
+      # 均从 ./frontend/.env.local 文件读取
+    depends_on:
+      - backend
+    command: npm start
+    networks:
+      - quickdeck-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: quickdeck-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=quickdeck
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - quickdeck-network
+
+volumes:
+  postgres-data:
+  backend-data:
+
+networks:
+  quickdeck-network:
+    driver: bridge

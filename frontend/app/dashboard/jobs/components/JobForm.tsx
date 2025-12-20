@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -29,6 +29,7 @@ import {
 } from "@ant-design/icons";
 import { jobApi, credentialApi, uploadApi, type Project, type Credential } from "@/lib/api";
 import PythonCodeEditor from "./PythonCodeEditor";
+import JsonSchemaForm, { type JsonSchemaFormRef } from "./JsonSchemaForm";
 
 const { Title } = Typography;
 
@@ -68,6 +69,10 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
   // 保存加载的原始数据，用于在提交时补充未访问 tab 的字段
   const [loadedFormData, setLoadedFormData] = useState<any>(null);
+  // 存储 JSON Schema 表单的值
+  const [jsonSchemaValues, setJsonSchemaValues] = useState<Record<string, any>>({});
+  // 存储 JSON Schema 表单的 ref
+  const jsonSchemaFormRefs = React.useRef<Record<string, JsonSchemaFormRef | null>>({});
 
   // 如果是编辑模式，加载工具详情
   useEffect(() => {
@@ -97,12 +102,14 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
           // 转换选项
           formValues.options = wf.options.map((opt) => ({
             option_type: opt.option_type,
-            name: opt.name,
+            // 如果是 json_schema 类型，参数名称默认为 "json"
+            name: opt.option_type === "json_schema" ? "json" : opt.name,
             display_name: opt.display_name,
             description: opt.description,
             default_value: opt.default_value,
             required: opt.required,
             credential_type: opt.credential_type,
+            json_schema: opt.json_schema,
           }));
           
           // 转换步骤（extension 需要转换为 JSON 字符串）
@@ -405,6 +412,19 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
         }
       }
 
+      // 验证普通表单
+      await testArgsForm.validateFields();
+      
+      // 验证所有 JSON Schema 表单
+      const jsonSchemaValidations = Object.keys(jsonSchemaFormRefs.current).map(async (key) => {
+        const ref = jsonSchemaFormRefs.current[key];
+        if (ref) {
+          await ref.validate();
+        }
+      });
+      
+      await Promise.all(jsonSchemaValidations);
+
       // 获取测试参数
       const testArgs = testArgsForm.getFieldsValue();
       // 移除空值并处理日期格式
@@ -424,6 +444,13 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
         }
       });
 
+      // 合并 JSON Schema 表单的值
+      Object.keys(jsonSchemaValues).forEach((key) => {
+        if (jsonSchemaValues[key] !== undefined && jsonSchemaValues[key] !== null) {
+          args[key] = jsonSchemaValues[key];
+        }
+      });
+
       setTestingScript(true);
       setTestResult(null);
 
@@ -431,8 +458,11 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       
       setTestResult(result);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "测试失败");
-      setTestResult({ error: error instanceof Error ? error.message : "测试失败" });
+      // 验证失败时不显示错误消息，由表单自己显示
+      if (error instanceof Error && !error.message.includes("验证")) {
+        message.error(error.message);
+        setTestResult({ error: error.message });
+      }
     } finally {
       setTestingScript(false);
     }
@@ -542,12 +572,21 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                             ]}
                             style={{ marginBottom: "8px" }}
                           >
-                            <Select placeholder="请选择参数类型">
+                            <Select 
+                              placeholder="请选择参数类型"
+                              onChange={(value) => {
+                                // 当选择 json_schema 时，自动设置参数名称为 "json"
+                                if (value === "json_schema") {
+                                  form.setFieldValue(["options", name, "name"], "json");
+                                }
+                              }}
+                            >
                               <Select.Option value="text">文本</Select.Option>
                               <Select.Option value="date">日期</Select.Option>
                               <Select.Option value="number">数字</Select.Option>
                               <Select.Option value="file">文件</Select.Option>
                               <Select.Option value="credential">授权凭证</Select.Option>
+                              <Select.Option value="json_schema">Json Schema</Select.Option>
                             </Select>
                           </Form.Item>
                         </Col>
@@ -587,74 +626,157 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                             }}
                           </Form.Item>
                         </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "name"]}
-                            label="参数名称"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            rules={[
-                              { required: true, message: "请输入参数名称" },
-                            ]}
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Input placeholder="请输入参数名称" />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "display_name"]}
-                            label="参数显示名"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Input placeholder="请输入参数显示名（可选）" />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "default_value"]}
-                            label="默认值"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Input placeholder="请输入默认值（可选）" />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item
-                            {...restField}
-                            name={[name, "required"]}
-                            label="必填"
-                            labelCol={{ span: 6 }}
-                            wrapperCol={{ span: 18 }}
-                            valuePropName="checked"
-                            initialValue={false}
-                            style={{ marginBottom: "8px" }}
-                          >
-                            <Switch checkedChildren="是" unCheckedChildren="否" />
-                          </Form.Item>
-                        </Col>
                         <Col span={24}>
                           <Form.Item
-                            {...restField}
-                            name={[name, "description"]}
-                            label="参数描述"
-                            labelCol={{ span: 3 }}
-                            wrapperCol={{ span: 21 }}
-                            style={{ marginBottom: "8px" }}
+                            noStyle
+                            shouldUpdate={(prevValues, curValues) => {
+                              const prevOptionType = prevValues.options?.[name]?.option_type;
+                              const curOptionType = curValues.options?.[name]?.option_type;
+                              return prevOptionType !== curOptionType;
+                            }}
                           >
-                            <Input.TextArea
-                              placeholder="请输入参数描述（可选）"
-                              rows={2}
-                            />
+                            {({ getFieldValue }) => {
+                              const optionType = getFieldValue(["options", name, "option_type"]);
+                              if (optionType === "json_schema") {
+                                return (
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "json_schema"]}
+                                    label="Json Schema"
+                                    labelCol={{ span: 3 }}
+                                    wrapperCol={{ span: 21 }}
+                                    rules={[
+                                      { required: true, message: "请输入 Json Schema 描述" },
+                                      {
+                                        validator: (_, value) => {
+                                          if (!value) {
+                                            return Promise.resolve();
+                                          }
+                                          try {
+                                            JSON.parse(value);
+                                            return Promise.resolve();
+                                          } catch (e) {
+                                            return Promise.reject(new Error("请输入有效的 JSON 格式"));
+                                          }
+                                        },
+                                      },
+                                    ]}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input.TextArea
+                                      placeholder='请输入 Json Schema 描述，例如: {"type": "object", "properties": {"name": {"type": "string"}}}'
+                                      rows={6}
+                                    />
+                                  </Form.Item>
+                                );
+                              }
+                              return null;
+                            }}
                           </Form.Item>
                         </Col>
+                        <Form.Item
+                          noStyle
+                          shouldUpdate={(prevValues, curValues) => {
+                            const prevOptionType = prevValues.options?.[name]?.option_type;
+                            const curOptionType = curValues.options?.[name]?.option_type;
+                            return prevOptionType !== curOptionType;
+                          }}
+                        >
+                          {({ getFieldValue }) => {
+                            const optionType = getFieldValue(["options", name, "option_type"]);
+                            const isJsonSchema = optionType === "json_schema";
+                            
+                            // 如果是 json_schema 类型，隐藏这些字段，但保留隐藏的参数名称字段用于验证
+                            if (isJsonSchema) {
+                              return (
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, "name"]}
+                                  hidden
+                                  initialValue="json"
+                                  rules={[
+                                    { required: true, message: "请输入参数名称" },
+                                  ]}
+                                >
+                                  <Input />
+                                </Form.Item>
+                              );
+                            }
+                            
+                            return (
+                              <>
+                                <Col span={12}>
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "name"]}
+                                    label="参数名称"
+                                    labelCol={{ span: 6 }}
+                                    wrapperCol={{ span: 18 }}
+                                    rules={[
+                                      { required: true, message: "请输入参数名称" },
+                                    ]}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input placeholder="请输入参数名称" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "display_name"]}
+                                    label="参数显示名"
+                                    labelCol={{ span: 6 }}
+                                    wrapperCol={{ span: 18 }}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input placeholder="请输入参数显示名（可选）" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "default_value"]}
+                                    label="默认值"
+                                    labelCol={{ span: 6 }}
+                                    wrapperCol={{ span: 18 }}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input placeholder="请输入默认值（可选）" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={12}>
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "required"]}
+                                    label="必填"
+                                    labelCol={{ span: 6 }}
+                                    wrapperCol={{ span: 18 }}
+                                    valuePropName="checked"
+                                    initialValue={false}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Switch checkedChildren="是" unCheckedChildren="否" />
+                                  </Form.Item>
+                                </Col>
+                                <Col span={24}>
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "description"]}
+                                    label="参数描述"
+                                    labelCol={{ span: 3 }}
+                                    wrapperCol={{ span: 21 }}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <Input.TextArea
+                                      placeholder="请输入参数描述（可选）"
+                                      rows={2}
+                                    />
+                                  </Form.Item>
+                                </Col>
+                              </>
+                            );
+                          }}
+                        </Form.Item>
                       </Row>
                     </div>
                   ))}
@@ -857,15 +979,15 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                         }}
                                       >
                                         <div style={{ marginBottom: "8px", fontWeight: "bold", color: "#1890ff" }}>
-                                          💡 参数引用说明：
+                                          💡 代码使用说明：
                                         </div>
                                         <div style={{ marginBottom: "8px", color: "#666" }}>
-                                          在代码中通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args</code> 字典访问输入参数。
-                                          例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>name</code>，则使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args.get("name")</code> 或 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args["name"]</code>
+                                          - 入参获取：通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args</code> 字典访问输入参数。
+                                          例如：参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>name</code>，使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>args.get("name")</code>
                                         </div>
                                         <div style={{ marginBottom: "8px", color: "#666" }}>
-                                          对于凭证类型的参数，通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential</code> 工具类访问凭证信息。
-                                          例如：如果参数名为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>mysql_credential</code>，先获取凭证ID：<code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>cred_id = args.get("mysql_credential")</code>，然后使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential.get_config(cred_id)</code> 获取配置
+                                          - 凭证获取：通过 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential</code> 获取。
+                                          例如：凭证ID为 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>21</code>，使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>credential.get_config(21)</code> 获取配置
                                         </div>
                                         <details style={{ cursor: "pointer" }}>
                                           <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例代码</summary>
@@ -1344,6 +1466,7 @@ def execute(args: dict) -> tuple:
           setTestModalVisible(false);
           setTestResult(null);
           testArgsForm.resetFields();
+          setJsonSchemaValues({});
         }}
         footer={[
           <Button
@@ -1352,6 +1475,7 @@ def execute(args: dict) -> tuple:
               setTestModalVisible(false);
               setTestResult(null);
               testArgsForm.resetFields();
+              setJsonSchemaValues({});
             }}
           >
             关闭
@@ -1377,6 +1501,59 @@ def execute(args: dict) -> tuple:
                 const label = option.display_name || option.name;
                 const isRequired = option.required;
                 const optionType = option.option_type || "text";
+                
+                // 如果是 json_schema 类型，使用 JsonSchemaForm 组件
+                if (optionType === "json_schema") {
+                  let jsonSchema = null;
+                  try {
+                    jsonSchema = typeof option.json_schema === "string"
+                      ? JSON.parse(option.json_schema)
+                      : option.json_schema;
+                  } catch (e) {
+                    console.error("JSON Schema 解析失败:", e);
+                  }
+                  
+                  if (!jsonSchema) {
+                    return (
+                      <Form.Item
+                        key={option.name}
+                        label={label}
+                        extra={option.description}
+                      >
+                        <div style={{ color: "red" }}>JSON Schema 无效</div>
+                      </Form.Item>
+                    );
+                  }
+                  
+                  return (
+                    <div key={option.name} style={{ marginBottom: "16px" }}>
+                      <div style={{ marginBottom: "8px", fontWeight: 500 }}>
+                        {label}
+                        {isRequired && <span style={{ color: "red", marginLeft: "4px" }}>*</span>}
+                      </div>
+                      {option.description && (
+                        <div style={{ marginBottom: "8px", color: "#666", fontSize: "12px" }}>
+                          {option.description}
+                        </div>
+                      )}
+                      <JsonSchemaForm
+                        ref={(ref) => {
+                          if (ref) {
+                            jsonSchemaFormRefs.current[option.name] = ref;
+                          }
+                        }}
+                        schema={jsonSchema}
+                        value={jsonSchemaValues[option.name]}
+                        onChange={(value) => {
+                          setJsonSchemaValues((prev) => ({
+                            ...prev,
+                            [option.name]: value,
+                          }));
+                        }}
+                      />
+                    </div>
+                  );
+                }
                 
                 // 根据 option_type 渲染不同的输入组件
                 let inputComponent;

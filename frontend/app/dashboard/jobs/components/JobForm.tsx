@@ -195,6 +195,8 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
             // 如果是 Python 脚本类型，且无法解析为 JSON，则视为纯代码内容
             if (step.step_type === "python_script") {
               extension = { script: extension };
+            } else if (step.step_type === "curl") {
+              extension = { curl: extension };
             } else {
               message.error(`步骤 ${step.order} 的扩展配置 JSON 格式错误`);
               throw new Error("扩展配置格式错误");
@@ -207,6 +209,18 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
             if (!extension.script || typeof extension.script !== "string") {
               message.error(`步骤 ${step.order} 的 Python 脚本内容不能为空`);
               throw new Error("Python 脚本内容不能为空");
+            }
+          } else {
+            message.error(`步骤 ${step.order} 的扩展配置格式错误`);
+            throw new Error("扩展配置格式错误");
+          }
+        }
+        // 对于 CURL 命令，确保 extension 是对象且包含 curl 字段
+        if (step.step_type === "curl") {
+          if (typeof extension === "object" && extension !== null) {
+            if (!extension.curl || typeof extension.curl !== "string") {
+              message.error(`步骤 ${step.order} 的 CURL 命令内容不能为空`);
+              throw new Error("CURL 命令内容不能为空");
             }
           } else {
             message.error(`步骤 ${step.order} 的扩展配置格式错误`);
@@ -882,11 +896,23 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                     );
                                   }
                                 }
+                                // 当选择 CURL 时，初始化 extension
+                                if (value === "curl") {
+                                  const currentExtension = form.getFieldValue(["steps", name, "extension"]);
+                                  // 如果 extension 为空或者是其他格式，初始化为包含空 curl 的 JSON
+                                  if (!currentExtension || (typeof currentExtension === "string" && !currentExtension.includes("curl"))) {
+                                    form.setFieldValue(
+                                      ["steps", name, "extension"],
+                                      JSON.stringify({ curl: "" }, null, 2)
+                                    );
+                                  }
+                                }
                               }}
                             >
-                              <Select.Option value="command">命令</Select.Option>
+                              <Select.Option value="command">Bash命令</Select.Option>
                               <Select.Option value="shell_script">Shell脚本</Select.Option>
                               <Select.Option value="python_script">Python脚本</Select.Option>
+                              <Select.Option value="curl">CURL命令</Select.Option>
                             </Select>
                           </Form.Item>
                         </Col>
@@ -902,6 +928,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                             {({ getFieldValue }) => {
                               const stepType = getFieldValue(["steps", name, "step_type"]);
                               const isPythonScript = stepType === "python_script";
+                              const isCurl = stepType === "curl";
                               
                               if (isPythonScript) {
                                 // Python 脚本：显示代码编辑器
@@ -1115,6 +1142,171 @@ def execute(args: dict) -> tuple:
                                                   JSON.stringify({ script: code }, null, 2)
                                                 );
                                               }}
+                                            />
+                                          );
+                                        }}
+                                      </Form.Item>
+                                    </div>
+                                  </Form.Item>
+                                );
+                              } else if (isCurl) {
+                                // CURL：显示 CURL 命令输入框
+                                return (
+                                  <Form.Item
+                                    {...restField}
+                                    name={[name, "extension"]}
+                                    label="CURL 命令"
+                                    labelCol={{ span: 3 }}
+                                    wrapperCol={{ span: 21 }}
+                                    rules={[
+                                      { required: true, message: "请输入 CURL 命令" },
+                                      {
+                                        validator: (_, value) => {
+                                          if (!value) {
+                                            return Promise.resolve();
+                                          }
+                                          // 如果是字符串，尝试解析为 JSON
+                                          if (typeof value === "string") {
+                                            try {
+                                              const parsed = JSON.parse(value);
+                                              if (!parsed.curl || typeof parsed.curl !== "string") {
+                                                return Promise.reject(new Error("扩展配置必须包含 curl 字段"));
+                                              }
+                                              // 检查 curl 内容是否为空
+                                              if (!parsed.curl.trim()) {
+                                                return Promise.reject(new Error("CURL 命令不能为空"));
+                                              }
+                                            } catch {
+                                              // 如果不是 JSON，可能是直接的命令内容
+                                              // 检查是否为空字符串
+                                              if (!value.trim()) {
+                                                return Promise.reject(new Error("CURL 命令不能为空"));
+                                              }
+                                              // 允许纯命令字符串通过验证（会在提交时转换为 JSON）
+                                              return Promise.resolve();
+                                            }
+                                          } else if (typeof value === "object") {
+                                            if (!value.curl || typeof value.curl !== "string") {
+                                              return Promise.reject(new Error("扩展配置必须包含 curl 字段"));
+                                            }
+                                            if (!value.curl.trim()) {
+                                              return Promise.reject(new Error("CURL 命令不能为空"));
+                                            }
+                                          }
+                                          return Promise.resolve();
+                                        },
+                                      },
+                                    ]}
+                                    style={{ marginBottom: "8px" }}
+                                  >
+                                    <div>
+                                      <div style={{ marginBottom: "8px" }}>
+                                        <span style={{ fontSize: "12px", color: "#666" }}>
+                                          输入 CURL 命令，系统将使用 Jinja2 模板引擎渲染参数
+                                        </span>
+                                      </div>
+                                      {/* CURL 参数引用提示和示例 */}
+                                      <div
+                                        style={{
+                                          marginBottom: "12px",
+                                          padding: "12px",
+                                          backgroundColor: "#f0f7ff",
+                                          border: "1px solid #91caff",
+                                          borderRadius: "4px",
+                                          fontSize: "12px",
+                                        }}
+                                      >
+                                        <div style={{ marginBottom: "8px", fontWeight: "bold", color: "#1890ff" }}>
+                                          💡 CURL 使用说明：
+                                        </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          - 普通参数引用：使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>{`{{ param_name }}`}</code>
+                                        </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          - JSON 参数引用：使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>{`{{ json.field_name }}`}</code>
+                                        </div>
+                                        <details style={{ cursor: "pointer" }}>
+                                          <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例</summary>
+                                          <pre
+                                            style={{
+                                              marginTop: "8px",
+                                              padding: "8px",
+                                              backgroundColor: "#fff",
+                                              borderRadius: "4px",
+                                              fontSize: "11px",
+                                              overflow: "auto",
+                                              whiteSpace: "pre-wrap",
+                                              wordBreak: "break-word",
+                                            }}
+                                          >
+{`# 示例1：GET 请求，使用普通参数
+curl -X GET "https://api.example.com/users?name={{ name }}&age={{ age }}"
+
+# 示例2：POST 请求，JSON 格式，使用普通参数
+curl -X POST "https://api.example.com/users" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "{{ name }}", "age": {{ age }}, "email": "{{ email }}"}'
+
+# 示例3：使用 JSON Schema 参数（假设参数名为 json）
+curl -X POST "https://api.example.com/data" \\
+  -H "Content-Type: application/json" \\
+  -d '{"user": "{{ json.username }}", "items": {{ json.items | tojson }}}'
+
+# 示例4：带认证的请求
+curl -X GET "https://api.example.com/protected" \\
+  -H "Authorization: Bearer {{ api_token }}"
+
+# 示例5：文件上传
+curl -X POST "https://api.example.com/upload" \\
+  -F "file=@{{ file_path }}" \\
+  -F "description={{ description }}"
+
+# 注意事项：
+# 1. 字符串参数需要用引号包裹：{{ name }}
+# 2. 数字参数不需要引号：{{ age }}
+# 3. JSON 对象可以使用 tojson 过滤器：{{ json.data | tojson }}
+# 4. 多行命令使用反斜杠 \\ 连接`}
+                                          </pre>
+                                        </details>
+                                      </div>
+                                      <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prevValues, currentValues) => {
+                                          const prevExt = prevValues.steps?.[name]?.extension;
+                                          const currentExt = currentValues.steps?.[name]?.extension;
+                                          return JSON.stringify(prevExt) !== JSON.stringify(currentExt);
+                                        }}
+                                      >
+                                        {({ getFieldValue }) => {
+                                          const extension = getFieldValue(["steps", name, "extension"]);
+                                          let curlContent = "";
+                                          
+                                          if (extension) {
+                                            if (typeof extension === "string") {
+                                              try {
+                                                const parsed = JSON.parse(extension);
+                                                curlContent = parsed.curl || "";
+                                              } catch {
+                                                curlContent = extension;
+                                              }
+                                            } else if (typeof extension === "object") {
+                                              curlContent = extension.curl || "";
+                                            }
+                                          }
+                                          
+                                          return (
+                                            <Input.TextArea
+                                              value={curlContent}
+                                              onChange={(e) => {
+                                                // 更新表单值，保存为 JSON 格式
+                                                form.setFieldValue(
+                                                  ["steps", name, "extension"],
+                                                  JSON.stringify({ curl: e.target.value }, null, 2)
+                                                );
+                                              }}
+                                              placeholder={'例如: curl -X POST "https://api.example.com/data" -H "Content-Type: application/json" -d \'{"name": "{{ name }}"}\''}
+                                              rows={6}
+                                              style={{ fontFamily: "monospace" }}
                                             />
                                           );
                                         }}

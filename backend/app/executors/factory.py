@@ -3,6 +3,7 @@ from app.executors import StepExecutor
 from app.executors.command import CommandExecutor
 from app.executors.shell_script import ShellScriptExecutor
 from app.executors.python_script import PythonScriptExecutor
+from app.executors.curl import CurlExecutor
 from app.models import StepTypeEnum
 
 
@@ -13,6 +14,7 @@ class ExecutorFactory:
         StepTypeEnum.COMMAND.value: CommandExecutor(),
         StepTypeEnum.SHELL_SCRIPT.value: ShellScriptExecutor(),
         StepTypeEnum.PYTHON_SCRIPT.value: PythonScriptExecutor(),
+        StepTypeEnum.CURL.value: CurlExecutor(),
     }
     
     @classmethod

@@ -1107,6 +1107,34 @@ export default function Dashboard() {
                       ),
                     },
                     {
+                      key: "logs",
+                      label: "执行日志",
+                      children: jobLogs ? (
+                        <div
+                          style={{
+                            padding: 16,
+                            background: "#fafafa",
+                            borderRadius: 4,
+                            border: "1px solid #f0f0f0",
+                            maxHeight: "600px",
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontFamily: "monospace",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {jobLogs}
+                        </div>
+                      ) : (
+                        <Empty
+                          description="暂无执行日志"
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          style={{ marginTop: 50 }}
+                        />
+                      ),
+                    },
+                    {
                       key: "dataset",
                       label: "数据详情",
                       children: jobResult?.dataset !== null && jobResult?.dataset !== undefined ? (
@@ -1186,34 +1214,6 @@ export default function Dashboard() {
                       ) : (
                         <Empty
                           description="暂无数据详情"
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          style={{ marginTop: 50 }}
-                        />
-                      ),
-                    },
-                    {
-                      key: "logs",
-                      label: "执行日志",
-                      children: jobLogs ? (
-                        <div
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderRadius: 4,
-                            border: "1px solid #f0f0f0",
-                            maxHeight: "600px",
-                            overflow: "auto",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            fontFamily: "monospace",
-                            fontSize: "12px",
-                          }}
-                        >
-                          {jobLogs}
-                        </div>
-                      ) : (
-                        <Empty
-                          description="暂无执行日志"
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           style={{ marginTop: 50 }}
                         />

@@ -40,6 +40,7 @@ class StepTypeEnum(str, enum.Enum):
     COMMAND = "command"
     SHELL_SCRIPT = "shell_script"
     PYTHON_SCRIPT = "python_script"
+    CURL = "curl"
     # 可以根据需要扩展更多类型
 
 

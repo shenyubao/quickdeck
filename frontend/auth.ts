@@ -174,7 +174,9 @@ export const authConfig = {
       // 访问仪表板需要登录
       if (isOnDashboard) {
         if (isLoggedIn) return true;
-        return false; // 重定向到登录页
+        // 未登录时显式重定向到登录页
+        const baseUrl = getBaseUrl();
+        return Response.redirect(new URL("/auth/signin", baseUrl));
       }
       
       // 访问根路径：已登录跳转到仪表板，未登录跳转到登录页

@@ -84,8 +84,11 @@ export default function DashboardLayout({
   }, [currentProject, onProjectChange]);
 
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    // 只有在用户已登录时才加载项目列表
+    if (session) {
+      loadProjects();
+    }
+  }, [loadProjects, session]);
 
   // 监听项目列表更新事件
   useEffect(() => {
@@ -113,6 +116,11 @@ export default function DashboardLayout({
   const [selectedMenu, setSelectedMenu] = useState(getSelectedKey());
 
   useEffect(() => {
+    // 只有在用户已登录时才执行重定向逻辑
+    if (!session) {
+      return;
+    }
+    
     const key = getSelectedKey();
     // 如果没有项目，且选中的是工具相关的菜单，自动切换到项目管理
     if (projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
@@ -124,7 +132,7 @@ export default function DashboardLayout({
     } else {
       setSelectedMenu(key);
     }
-  }, [pathname, projects.length]);
+  }, [pathname, projects.length, session, router]);
 
   // 当离开项目管理页面时，刷新项目列表（以便获取最新创建的项目）
   useEffect(() => {

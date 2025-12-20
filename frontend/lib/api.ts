@@ -90,10 +90,14 @@ async function handleResponse<T>(response: Response): Promise<T> {
       errorMessage = errorText || errorMessage;
     }
     
-    // 如果是 401 未授权，自动登出并跳转到登录页
-    if (response.status === 401) {
+    // 如果是 401 未授权或 403 权限不足，自动登出并跳转到登录页
+    if (response.status === 401 || response.status === 403) {
       await handleUnauthorized();
-      errorMessage = "认证失败，请重新登录";
+      if (response.status === 401) {
+        errorMessage = "认证失败，请重新登录";
+      } else {
+        errorMessage = "您没有访问此页面的权限，请重新登录";
+      }
     }
     
     // 如果是 413 Payload Too Large，提示用户数据太大

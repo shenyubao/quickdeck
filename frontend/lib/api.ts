@@ -168,7 +168,7 @@ export interface OptionCreate {
 // Step 相关类型
 export interface StepCreate {
   order: number;
-  step_type: "command" | "shell_script" | "python_script";
+  step_type: "command" | "shell_script" | "python_script" | "curl" | "mysql";
   extension: Record<string, any>;
 }
 
@@ -196,7 +196,7 @@ export interface OptionResponse {
 export interface StepResponse {
   id: number;
   order: number;
-  step_type: "command" | "shell_script" | "python_script";
+  step_type: "command" | "shell_script" | "python_script" | "curl" | "mysql";
   extension: Record<string, any>;
 }
 

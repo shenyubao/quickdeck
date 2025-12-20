@@ -41,6 +41,7 @@ class StepTypeEnum(str, enum.Enum):
     SHELL_SCRIPT = "shell_script"
     PYTHON_SCRIPT = "python_script"
     CURL = "curl"
+    MYSQL = "mysql"
     # 可以根据需要扩展更多类型
 
 

@@ -67,6 +67,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [currentTestOptions, setCurrentTestOptions] = useState<any[]>([]);
   const [testArgsForm] = Form.useForm();
   const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
+  const [loadingMysqlCredentials, setLoadingMysqlCredentials] = useState(false);
   // 保存加载的原始数据，用于在提交时补充未访问 tab 的字段
   const [loadedFormData, setLoadedFormData] = useState<any>(null);
   // 存储 JSON Schema 表单的值
@@ -155,6 +156,47 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
     loadJobDetail();
   }, [isEditMode, jobId, form, router]);
 
+  // 加载 MySQL 凭证列表
+  useEffect(() => {
+    const loadMysqlCredentials = async () => {
+      if (!currentProject) {
+        return;
+      }
+      
+      // 如果已经有 MySQL 凭证，不需要重新加载
+      if (credentialsMap["mysql"] && credentialsMap["mysql"].length > 0) {
+        return;
+      }
+      
+      // 如果正在加载，避免重复请求
+      if (loadingMysqlCredentials) {
+        return;
+      }
+      
+      setLoadingMysqlCredentials(true);
+      try {
+        const creds = await credentialApi.getAll({
+          project_id: currentProject.id,
+          credential_type: "mysql",
+        });
+        setCredentialsMap((prev) => ({
+          ...prev,
+          mysql: creds,
+        }));
+      } catch (error) {
+        console.error("加载 MySQL 凭证失败:", error);
+        setCredentialsMap((prev) => ({
+          ...prev,
+          mysql: [],
+        }));
+      } finally {
+        setLoadingMysqlCredentials(false);
+      }
+    };
+    
+    loadMysqlCredentials();
+  }, [currentProject?.id]); // 只依赖项目ID，避免无限循环
+
   // 提交表单
   const handleSubmit = async () => {
     try {
@@ -186,23 +228,72 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
       };
 
       // 处理步骤的扩展配置（解析 JSON 字符串）
-      const processedSteps = (mergedValues.steps || []).map((step: any) => {
+      console.log("🔍 [提交调试] 开始处理步骤扩展配置");
+      console.log("🔍 [提交调试] mergedValues.steps:", JSON.stringify(mergedValues.steps, null, 2));
+      console.log("🔍 [提交调试] allFormValues.steps:", JSON.stringify(allFormValues.steps, null, 2));
+      console.log("🔍 [提交调试] values.steps:", JSON.stringify(values.steps, null, 2));
+      
+      const processedSteps = (mergedValues.steps || []).map((step: any, index: number) => {
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] 开始处理步骤`);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] step_type:`, step.step_type);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] 原始 extension:`, step.extension);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 类型:`, typeof step.extension);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是否为 null:`, step.extension === null);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是否为 undefined:`, step.extension === undefined);
+        console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是否为空字符串:`, step.extension === "");
+        
         let extension = step.extension;
+        
+        // 处理空值或未定义的情况
+        if (extension === null || extension === undefined || extension === "") {
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 为空值，类型: ${step.step_type}`);
+          if (step.step_type === "mysql") {
+            console.error(`❌ [步骤 ${step.order || index + 1} 调试] MySQL 扩展配置为空，抛出错误`);
+            message.error(`步骤 ${step.order} 的 MySQL 扩展配置不能为空`);
+            throw new Error("MySQL 扩展配置不能为空");
+          }
+          extension = {};
+        }
+        
         if (typeof extension === "string") {
-          try {
-            extension = JSON.parse(extension);
-          } catch (e) {
-            // 如果是 Python 脚本类型，且无法解析为 JSON，则视为纯代码内容
-            if (step.step_type === "python_script") {
-              extension = { script: extension };
-            } else if (step.step_type === "curl") {
-              extension = { curl: extension };
-            } else {
-              message.error(`步骤 ${step.order} 的扩展配置 JSON 格式错误`);
-              throw new Error("扩展配置格式错误");
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是字符串，长度: ${extension.length}`);
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 内容:`, extension.substring(0, 200));
+          
+          // 如果是空字符串，根据步骤类型设置默认值
+          if (extension.trim() === "") {
+            console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是空字符串`);
+            if (step.step_type === "mysql") {
+              console.error(`❌ [步骤 ${step.order || index + 1} 调试] MySQL 扩展配置为空字符串，抛出错误`);
+              message.error(`步骤 ${step.order} 的 MySQL 扩展配置不能为空`);
+              throw new Error("MySQL 扩展配置不能为空");
+            }
+            extension = {};
+          } else {
+            try {
+              console.log(`🔍 [步骤 ${step.order || index + 1} 调试] 尝试解析 JSON`);
+              extension = JSON.parse(extension);
+              console.log(`🔍 [步骤 ${step.order || index + 1} 调试] JSON 解析成功:`, extension);
+            } catch (e) {
+              console.error(`❌ [步骤 ${step.order || index + 1} 调试] JSON 解析失败:`, e);
+              console.error(`❌ [步骤 ${step.order || index + 1} 调试] 原始字符串:`, extension);
+              // 如果是 Python 脚本类型，且无法解析为 JSON，则视为纯代码内容
+              if (step.step_type === "python_script") {
+                extension = { script: extension };
+              } else if (step.step_type === "curl") {
+                extension = { curl: extension };
+              } else if (step.step_type === "mysql") {
+                // MySQL 类型必须是可以解析的 JSON 格式，包含 sql 和 credential_id
+                console.error(`❌ [步骤 ${step.order || index + 1} 调试] MySQL 扩展配置 JSON 格式错误`);
+                message.error(`步骤 ${step.order} 的 MySQL 扩展配置必须是有效的 JSON 格式，包含 sql 和 credential_id 字段`);
+                throw new Error("MySQL 扩展配置格式错误");
+              } else {
+                message.error(`步骤 ${step.order} 的扩展配置 JSON 格式错误`);
+                throw new Error("扩展配置格式错误");
+              }
             }
           }
         }
+        
         // 对于 Python 脚本，确保 extension 是对象且包含 script 字段
         if (step.step_type === "python_script") {
           if (typeof extension === "object" && extension !== null) {
@@ -223,6 +314,38 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
               throw new Error("CURL 命令内容不能为空");
             }
           } else {
+            message.error(`步骤 ${step.order} 的扩展配置格式错误`);
+            throw new Error("扩展配置格式错误");
+          }
+        }
+        // 对于 MySQL 语句，确保 extension 是对象且包含 sql 和 credential_id 字段
+        if (step.step_type === "mysql") {
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] 验证 MySQL 扩展配置`);
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 类型:`, typeof extension);
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是否为对象:`, typeof extension === "object");
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 是否为 null:`, extension === null);
+          console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension 内容:`, JSON.stringify(extension, null, 2));
+          
+          if (typeof extension === "object" && extension !== null) {
+            console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension.sql:`, extension.sql);
+            console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension.sql 类型:`, typeof extension.sql);
+            console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension.credential_id:`, extension.credential_id);
+            console.log(`🔍 [步骤 ${step.order || index + 1} 调试] extension.credential_id 类型:`, typeof extension.credential_id);
+            
+            if (!extension.sql || typeof extension.sql !== "string") {
+              console.error(`❌ [步骤 ${step.order || index + 1} 调试] SQL 语句为空或类型错误`);
+              message.error(`步骤 ${step.order} 的 SQL 语句不能为空`);
+              throw new Error("SQL 语句不能为空");
+            }
+            if (!extension.credential_id) {
+              console.error(`❌ [步骤 ${step.order || index + 1} 调试] MySQL 凭证为空`);
+              message.error(`步骤 ${step.order} 的 MySQL 凭证不能为空`);
+              throw new Error("MySQL 凭证不能为空");
+            }
+            console.log(`✅ [步骤 ${step.order || index + 1} 调试] MySQL 扩展配置验证通过`);
+          } else {
+            console.error(`❌ [步骤 ${step.order || index + 1} 调试] extension 不是对象或为 null`);
+            console.error(`❌ [步骤 ${step.order || index + 1} 调试] extension 值:`, extension);
             message.error(`步骤 ${step.order} 的扩展配置格式错误`);
             throw new Error("扩展配置格式错误");
           }
@@ -907,12 +1030,24 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                                     );
                                   }
                                 }
+                                // 当选择 MYSQL 时，初始化 extension
+                                if (value === "mysql") {
+                                  const currentExtension = form.getFieldValue(["steps", name, "extension"]);
+                                  // 如果 extension 为空或者是其他格式，初始化为包含空 sql 和 credential_id 的 JSON
+                                  if (!currentExtension || (typeof currentExtension === "string" && !currentExtension.includes("sql"))) {
+                                    form.setFieldValue(
+                                      ["steps", name, "extension"],
+                                      JSON.stringify({ sql: "", credential_id: null }, null, 2)
+                                    );
+                                  }
+                                }
                               }}
                             >
                               <Select.Option value="command">Bash命令</Select.Option>
                               <Select.Option value="shell_script">Shell脚本</Select.Option>
                               <Select.Option value="python_script">Python脚本</Select.Option>
                               <Select.Option value="curl">CURL命令</Select.Option>
+                              <Select.Option value="mysql">MySQL语句</Select.Option>
                             </Select>
                           </Form.Item>
                         </Col>
@@ -929,6 +1064,7 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                               const stepType = getFieldValue(["steps", name, "step_type"]);
                               const isPythonScript = stepType === "python_script";
                               const isCurl = stepType === "curl";
+                              const isMysql = stepType === "mysql";
                               
                               if (isPythonScript) {
                                 // Python 脚本：显示代码编辑器
@@ -1313,6 +1449,277 @@ curl -X POST "https://api.example.com/upload" \\
                                       </Form.Item>
                                     </div>
                                   </Form.Item>
+                                );
+                              } else if (isMysql) {
+                                // MySQL：显示 SQL 语句和凭证选择
+                                return (
+                                  <>
+                                    {/* 隐藏的 extension 字段，用于表单验证和提交 */}
+                                    <Form.Item
+                                      {...restField}
+                                      name={[name, "extension"]}
+                                      hidden
+                                      rules={[
+                                        { required: true, message: "MySQL 配置不能为空" },
+                                        {
+                                          validator: (_, value) => {
+                                            if (!value) {
+                                              return Promise.reject(new Error("MySQL 配置不能为空"));
+                                            }
+                                            let extension = value;
+                                            if (typeof extension === "string") {
+                                              try {
+                                                extension = JSON.parse(extension);
+                                              } catch {
+                                                return Promise.reject(new Error("MySQL 扩展配置必须是有效的 JSON 格式"));
+                                              }
+                                            }
+                                            if (typeof extension !== "object" || extension === null) {
+                                              return Promise.reject(new Error("MySQL 扩展配置格式错误"));
+                                            }
+                                            if (!extension.sql || typeof extension.sql !== "string" || !extension.sql.trim()) {
+                                              return Promise.reject(new Error("SQL 语句不能为空"));
+                                            }
+                                            if (!extension.credential_id) {
+                                              return Promise.reject(new Error("MySQL 凭证不能为空"));
+                                            }
+                                            return Promise.resolve();
+                                          },
+                                        },
+                                      ]}
+                                    >
+                                      <Input type="hidden" />
+                                    </Form.Item>
+                                    
+                                    {/* MySQL 凭证选择 */}
+                                    <Form.Item
+                                      label="MySQL 凭证"
+                                      labelCol={{ span: 3 }}
+                                      wrapperCol={{ span: 21 }}
+                                      style={{ marginBottom: "12px" }}
+                                      required
+                                    >
+                                      <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prevValues, currentValues) => {
+                                          const prevExt = prevValues.steps?.[name]?.extension;
+                                          const currentExt = currentValues.steps?.[name]?.extension;
+                                          return JSON.stringify(prevExt) !== JSON.stringify(currentExt);
+                                        }}
+                                      >
+                                        {({ getFieldValue }) => {
+                                          const extension = getFieldValue(["steps", name, "extension"]);
+                                          let credentialId = null;
+                                          
+                                          if (extension) {
+                                            if (typeof extension === "string") {
+                                              try {
+                                                const parsed = JSON.parse(extension);
+                                                credentialId = parsed.credential_id || null;
+                                              } catch {
+                                                // 忽略解析错误
+                                              }
+                                            } else if (typeof extension === "object") {
+                                              credentialId = extension.credential_id || null;
+                                            }
+                                          }
+                                          
+                                          const mysqlCredentials = credentialsMap["mysql"] || [];
+                                          
+                                          return (
+                                            <Select
+                                              placeholder="请选择 MySQL 凭证"
+                                              value={credentialId}
+                                              showSearch
+                                              optionFilterProp="label"
+                                              loading={loadingMysqlCredentials}
+                                              notFoundContent={
+                                                loadingMysqlCredentials 
+                                                  ? "加载中..." 
+                                                  : mysqlCredentials.length === 0 
+                                                    ? "暂无 MySQL 凭证，请先在凭证管理中创建" 
+                                                    : undefined
+                                              }
+                                              onChange={(value) => {
+                                                console.log(`🔍 [MySQL 凭证选择] 步骤 ${name}，选择的凭证ID:`, value);
+                                                const currentExtension = getFieldValue(["steps", name, "extension"]);
+                                                console.log(`🔍 [MySQL 凭证选择] 当前 extension:`, currentExtension);
+                                                let currentSql = "";
+                                                if (currentExtension) {
+                                                  if (typeof currentExtension === "string") {
+                                                    try {
+                                                      const parsed = JSON.parse(currentExtension);
+                                                      currentSql = parsed.sql || "";
+                                                      console.log(`🔍 [MySQL 凭证选择] 从 JSON 字符串解析得到 sql:`, currentSql);
+                                                    } catch {
+                                                      currentSql = currentExtension;
+                                                      console.log(`🔍 [MySQL 凭证选择] JSON 解析失败，使用原始值作为 sql`);
+                                                    }
+                                                  } else if (typeof currentExtension === "object") {
+                                                    currentSql = currentExtension.sql || "";
+                                                    console.log(`🔍 [MySQL 凭证选择] 从对象获取 sql:`, currentSql);
+                                                  }
+                                                }
+                                                const newExtension = JSON.stringify({ sql: currentSql, credential_id: value }, null, 2);
+                                                console.log(`🔍 [MySQL 凭证选择] 设置新的 extension:`, newExtension);
+                                                form.setFieldValue(
+                                                  ["steps", name, "extension"],
+                                                  newExtension
+                                                );
+                                              }}
+                                            >
+                                              {mysqlCredentials.map((cred: Credential) => (
+                                                <Select.Option key={cred.id} value={cred.id} label={cred.name}>
+                                                  {cred.name} {cred.description ? `(${cred.description})` : ""}
+                                                </Select.Option>
+                                              ))}
+                                            </Select>
+                                          );
+                                        }}
+                                      </Form.Item>
+                                    </Form.Item>
+                                    
+                                    {/* SQL 语句输入 */}
+                                    <Form.Item
+                                      label="SQL 语句"
+                                      labelCol={{ span: 3 }}
+                                      wrapperCol={{ span: 21 }}
+                                      style={{ marginBottom: "8px" }}
+                                      required
+                                    >
+                                      <Form.Item
+                                        noStyle
+                                        shouldUpdate={(prevValues, currentValues) => {
+                                          const prevExt = prevValues.steps?.[name]?.extension;
+                                          const currentExt = currentValues.steps?.[name]?.extension;
+                                          return JSON.stringify(prevExt) !== JSON.stringify(currentExt);
+                                        }}
+                                      >
+                                        {({ getFieldValue }) => {
+                                          const extension = getFieldValue(["steps", name, "extension"]);
+                                          let sqlContent = "";
+                                          
+                                          if (extension) {
+                                            if (typeof extension === "string") {
+                                              try {
+                                                const parsed = JSON.parse(extension);
+                                                sqlContent = parsed.sql || "";
+                                              } catch {
+                                                sqlContent = extension;
+                                              }
+                                            } else if (typeof extension === "object") {
+                                              sqlContent = extension.sql || "";
+                                            }
+                                          }
+                                          
+                                          return (
+                                            <Input.TextArea
+                                              value={sqlContent}
+                                              placeholder="例如: SELECT * FROM users WHERE name = '{{ name }}' AND age > {{ age }}"
+                                              rows={8}
+                                              style={{ fontFamily: "monospace" }}
+                                              onChange={(e) => {
+                                                console.log(`🔍 [SQL 输入] 步骤 ${name}，输入的 SQL:`, e.target.value.substring(0, 100));
+                                                const currentExtension = getFieldValue(["steps", name, "extension"]);
+                                                console.log(`🔍 [SQL 输入] 当前 extension:`, currentExtension);
+                                                let currentCredentialId = null;
+                                                if (currentExtension) {
+                                                  if (typeof currentExtension === "string") {
+                                                    try {
+                                                      const parsed = JSON.parse(currentExtension);
+                                                      currentCredentialId = parsed.credential_id || null;
+                                                      console.log(`🔍 [SQL 输入] 从 JSON 字符串解析得到 credential_id:`, currentCredentialId);
+                                                    } catch {
+                                                      console.log(`🔍 [SQL 输入] JSON 解析失败`);
+                                                      // 忽略解析错误
+                                                    }
+                                                  } else if (typeof currentExtension === "object") {
+                                                    currentCredentialId = currentExtension.credential_id || null;
+                                                    console.log(`🔍 [SQL 输入] 从对象获取 credential_id:`, currentCredentialId);
+                                                  }
+                                                }
+                                                // 更新表单值，保存为 JSON 格式
+                                                const newExtension = JSON.stringify({ sql: e.target.value, credential_id: currentCredentialId }, null, 2);
+                                                console.log(`🔍 [SQL 输入] 设置新的 extension:`, newExtension);
+                                                form.setFieldValue(
+                                                  ["steps", name, "extension"],
+                                                  newExtension
+                                                );
+                                              }}
+                                            />
+                                          );
+                                        }}
+                                      </Form.Item>
+                                    </Form.Item>
+                                    
+                                    {/* MySQL 使用说明 */}
+                                    <Form.Item
+                                      label=" "
+                                      labelCol={{ span: 3 }}
+                                      wrapperCol={{ span: 21 }}
+                                      style={{ marginBottom: "8px" }}
+                                    >
+                                      <div
+                                        style={{
+                                          padding: "12px",
+                                          backgroundColor: "#f0f7ff",
+                                          border: "1px solid #91caff",
+                                          borderRadius: "4px",
+                                          fontSize: "12px",
+                                        }}
+                                      >
+                                        <div style={{ marginBottom: "8px", fontWeight: "bold", color: "#1890ff" }}>
+                                          💡 MySQL 使用说明：
+                                        </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          - 普通参数引用：使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>{`{{ param_name }}`}</code>
+                                        </div>
+                                        <div style={{ marginBottom: "8px", color: "#666" }}>
+                                          - JSON 参数引用：使用 <code style={{ backgroundColor: "#fff", padding: "2px 4px", borderRadius: "2px" }}>{`{{ json.field_name }}`}</code>
+                                        </div>
+                                        <details style={{ cursor: "pointer" }}>
+                                          <summary style={{ color: "#1890ff", marginBottom: "4px" }}>查看示例</summary>
+                                          <pre
+                                            style={{
+                                              marginTop: "8px",
+                                              padding: "8px",
+                                              backgroundColor: "#fff",
+                                              borderRadius: "4px",
+                                              fontSize: "11px",
+                                              overflow: "auto",
+                                              whiteSpace: "pre-wrap",
+                                              wordBreak: "break-word",
+                                            }}
+                                          >
+{`# 示例1：查询语句，使用普通参数
+SELECT * FROM users WHERE name = '{{ name }}' AND age > {{ age }}
+
+# 示例2：插入语句，使用普通参数
+INSERT INTO users (name, age, email) VALUES ('{{ name }}', {{ age }}, '{{ email }}')
+
+# 示例3：更新语句，使用 JSON Schema 参数
+UPDATE users SET name = '{{ json.username }}', age = {{ json.age }} WHERE id = {{ user_id }}
+
+# 示例4：删除语句
+DELETE FROM users WHERE id = {{ user_id }} AND status = '{{ status }}'
+
+# 示例5：复杂查询
+SELECT u.name, u.email, p.title 
+FROM users u 
+LEFT JOIN posts p ON u.id = p.user_id 
+WHERE u.age > {{ min_age }} AND u.status = '{{ status }}'
+ORDER BY u.created_at DESC
+LIMIT {{ limit }}
+
+# 注意事项：
+# 1. 字符串参数需要用引号包裹：'{{ name }}'
+# 2. 数字参数不需要引号：{{ age }}
+# 3. 查询语句会返回结果集，非查询语句会返回影响行数`}
+                                          </pre>
+                                        </details>
+                                      </div>
+                                    </Form.Item>
+                                  </>
                                 );
                               } else {
                                 // 其他类型：显示扩展配置

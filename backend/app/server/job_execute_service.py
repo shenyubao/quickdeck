@@ -76,25 +76,39 @@ class JobExecuteService:
                     else:
                         raise ValueError(f"文件参数 '{key}' 必须是字符串路径或文件对象，但得到了 {type(value).__name__}")
         
-        # 加载凭证信息（如果参数中包含凭证ID）
+        # 加载凭证信息（如果参数中包含凭证ID，或步骤的extension中包含凭证ID）
         credentials_map = {}
+        credential_ids = []
+        
+        # 从参数中获取凭证ID（如果参数类型是credential）
         if processed_args:
-            # 获取所有凭证ID（从args中查找）
-            credential_ids = []
             for key, value in processed_args.items():
                 if isinstance(value, (int, str)) and str(value).isdigit():
                     # 检查是否是凭证ID（需要根据工作流的选项来判断）
                     for option in workflow.options:
                         if option.name == key and option.option_type == "credential":
                             credential_ids.append(int(value))
-            
-            # 批量加载凭证
-            if credential_ids:
-                credentials = db.query(Credential).filter(
-                    Credential.id.in_(credential_ids),
-                    Credential.project_id == job.project_id
-                ).all() if db else []
-                credentials_map = {cred.id: cred for cred in credentials}
+        
+        # 从步骤的extension中获取凭证ID（例如MySQL步骤）
+        for step in workflow.steps:
+            if step.extension:
+                extension = step.extension if isinstance(step.extension, dict) else {}
+                # MySQL步骤类型
+                if step.step_type == "mysql" and extension.get("credential_id"):
+                    credential_id = extension.get("credential_id")
+                    if credential_id:
+                        credential_ids.append(int(credential_id))
+                # 其他可能需要凭证的步骤类型可以在这里添加
+        
+        # 批量加载凭证
+        if credential_ids:
+            # 去重
+            credential_ids = list(set(credential_ids))
+            credentials = db.query(Credential).filter(
+                Credential.id.in_(credential_ids),
+                Credential.project_id == job.project_id
+            ).all() if db else []
+            credentials_map = {cred.id: cred for cred in credentials}
         
         # 初始化上下文和结果
         context = {

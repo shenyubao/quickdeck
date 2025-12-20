@@ -16,11 +16,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 # 使用生产环境配置
-COMPOSE_FILE="docker-compose.prod.yml"
-if [ ! -f "$COMPOSE_FILE" ]; then
-    COMPOSE_FILE="docker-compose.yml"
-    echo -e "${YELLOW}[WARNING]${NC} docker-compose.prod.yml 不存在，使用 docker-compose.yml"
-fi
+COMPOSE_FILE="docker-compose.yml"
 
 # 日志函数
 log_info() {

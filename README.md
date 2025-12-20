@@ -203,13 +203,13 @@ cp backend/.env.example backend/.env
 
 ```bash
 # 使用生产环境配置文件启动
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 
 # 查看服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 
 # 查看日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose logs -f
 ```
 
 ### 生产环境运维命令
@@ -218,21 +218,21 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ```bash
 # 启动所有服务
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose up -d
 
 # 停止所有服务
-docker-compose -f docker-compose.prod.yml down
+docker-compose down
 
 # 重启所有服务
-docker-compose -f docker-compose.prod.yml restart
+docker-compose restart
 
 # 重启特定服务
-docker-compose -f docker-compose.prod.yml restart frontend
-docker-compose -f docker-compose.prod.yml restart backend
-docker-compose -f docker-compose.prod.yml restart nginx
+docker-compose restart frontend
+docker-compose restart backend
+docker-compose restart nginx
 
 # 查看服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 
 # 查看服务资源使用情况
 docker stats
@@ -242,18 +242,18 @@ docker stats
 
 ```bash
 # 查看所有服务日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose logs -f
 
 # 查看特定服务日志
-docker-compose -f docker-compose.prod.yml logs -f frontend
-docker-compose -f docker-compose.prod.yml logs -f backend
-docker-compose -f docker-compose.prod.yml logs -f nginx
+docker-compose logs -f frontend
+docker-compose logs -f backend
+docker-compose logs -f nginx
 
 # 查看最近 100 行日志
-docker-compose -f docker-compose.prod.yml logs --tail=100
+docker-compose logs --tail=100
 
 # 查看最近 1 小时的日志
-docker-compose -f docker-compose.prod.yml logs --since 1h
+docker-compose logs --since 1h
 ```
 
 #### 更新和部署
@@ -264,14 +264,14 @@ docker pull ssybb1988/quickdeck-backend:latest
 docker pull ssybb1988/quickdeck-frontend:latest
 
 # 更新服务（拉取新镜像后）
-docker-compose -f docker-compose.prod.yml up -d --pull always
+docker-compose up -d --pull always
 
 # 重新构建并启动（如果使用本地构建）
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose up -d --build
 
 # 更新特定服务
-docker-compose -f docker-compose.prod.yml up -d --no-deps frontend
-docker-compose -f docker-compose.prod.yml up -d --no-deps backend
+docker-compose up -d --no-deps frontend
+docker-compose up -d --no-deps backend
 ```
 
 #### 数据库管理
@@ -294,7 +294,7 @@ docker exec -i quickdeck-db psql -U postgres quickdeck < backup_file.sql
 
 ```bash
 # 检查容器健康状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose ps
 
 # 进入容器进行调试
 docker exec -it quickdeck-frontend sh

@@ -71,33 +71,16 @@ check_dependencies() {
 check_prod_env() {
     log_info "检查环境配置..."
     
-    # 检查必要的环境变量
-    local missing_vars=()
-    
-    if [ ! -f "backend/.env" ]; then
-        missing_vars+=("backend/.env")
-    fi
-    
-    if [ ! -f "frontend/.env.local" ]; then
-        missing_vars+=("frontend/.env.local")
-    fi
-    
-    if [ ${#missing_vars[@]} -gt 0 ]; then
-        log_error "缺少必要的环境变量文件:"
-        for var in "${missing_vars[@]}"; do
-            echo "  - $var"
-        done
-        log_error "请先配置环境变量文件"
+    # 检查必要的环境变量文件
+    if [ ! -f ".env" ]; then
+        log_error "缺少必要的环境变量文件: .env"
+        log_error "请先配置环境变量文件（可以从 env.example 复制）"
         exit 1
     fi
     
     # 检查关键配置
-    if grep -q "your-secret-key" backend/.env 2>/dev/null; then
-        log_warning "backend/.env 中可能包含默认密钥，请修改为强密钥"
-    fi
-    
-    if grep -q "your-secret-key" frontend/.env.local 2>/dev/null; then
-        log_warning "frontend/.env.local 中可能包含默认密钥，请修改为强密钥"
+    if grep -q "your-secret-key" .env 2>/dev/null; then
+        log_warning ".env 中可能包含默认密钥，请修改为强密钥"
     fi
     
     log_success "环境配置检查完成"
@@ -132,6 +115,19 @@ run_migrations() {
         log_success "数据库迁移完成"
     else
         log_warning "数据库迁移失败，请检查日志"
+    fi
+}
+
+# 拉取 Docker 镜像
+pull_images() {
+    log_info "拉取 Docker 镜像..."
+    
+    # 从 docker-compose.yml 中拉取镜像
+    if docker-compose -f "$COMPOSE_FILE" pull; then
+        log_success "Docker 镜像拉取完成"
+    else
+        log_error "Docker 镜像拉取失败"
+        exit 1
     fi
 }
 
@@ -209,6 +205,10 @@ main() {
             wait_for_db
             run_migrations
             ;;
+        pull)
+            check_dependencies
+            pull_images
+            ;;
         *)
             echo "QuickDeck 服务器管理脚本"
             echo ""
@@ -221,6 +221,7 @@ main() {
             echo "  status     - 显示服务状态"
             echo "  logs [服务] - 查看日志"
             echo "  migrate    - 运行数据库迁移"
+            echo "  pull       - 拉取 Docker 镜像"
             exit 1
             ;;
     esac

@@ -19,9 +19,10 @@ services:
     volumes:
       - ./backend:/app
       - backend-data:/app/data
+    env_file:
+      - ./.env
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/quickdeck
     depends_on:
       - db
     networks:
@@ -35,11 +36,9 @@ services:
       - /app/node_modules
       - /app/.next
     env_file:
-      - ./frontend/.env.local
+      - ./.env
     environment:
       - API_URL=http://backend:8000
-      # 其他环境变量（NODE_ENV, NEXTAUTH_URL, NEXTAUTH_SECRET, NEXT_PUBLIC_API_URL 等）
-      # 均从 ./frontend/.env.local 文件读取
     depends_on:
       - backend
     command: npm start

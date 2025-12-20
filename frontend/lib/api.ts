@@ -1,28 +1,27 @@
 import { getSession, signOut } from "next-auth/react";
 
 // 获取 API URL
-// 如果 NEXT_PUBLIC_API_URL 为空或未设置，使用相对路径（通过 nginx 代理）
+// 从 NEXT_PUBLIC_URL 自动拼接 /api 路径
 const getApiUrl = () => {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  const publicUrl = process.env.NEXT_PUBLIC_URL;
   
   // 如果环境变量为空或未设置，使用相对路径（通过 nginx 代理）
-  if (!envUrl || envUrl.trim() === "") {
+  if (!publicUrl || publicUrl.trim() === "") {
     return "";
   }
   
   if (typeof window !== "undefined") {
-    // 客户端（浏览器）：直接使用环境变量，不进行替换
-    // 生产环境应该通过 nginx 代理，使用相对路径（空字符串）
-    // 开发环境可以设置完整的 URL
-    return envUrl;
+    // 客户端（浏览器）：NEXT_PUBLIC_URL + /api
+    return `${publicUrl}/api`;
   }
   
-  // 服务端：可以使用 Docker 内部网络名称
-  // 如果环境变量包含 localhost，在服务端替换为 backend（Docker 内部网络）
-  if (envUrl.includes("localhost")) {
-    return envUrl.replace(/localhost/g, "backend");
+  // 服务端：如果 NEXT_PUBLIC_URL 包含 localhost，在服务端替换为 backend（Docker 内部网络）
+  if (publicUrl.includes("localhost")) {
+    return "http://backend:8000/api";
   }
-  return envUrl;
+  
+  // 其他情况使用 NEXT_PUBLIC_URL + /api
+  return `${publicUrl}/api`;
 };
 
 // 使用函数而不是直接赋值，确保在运行时获取正确的 URL

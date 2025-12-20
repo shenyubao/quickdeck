@@ -50,7 +50,7 @@ cp backend/.env.example backend/.env
 
 # 前端环境变量
 cp frontend/.env.example frontend/.env.local
-# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_API_URL=http://localhost:8000
+# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_URL=http://localhost
 ```
 
 3. 启动基础服务（数据库和 nginx）
@@ -102,7 +102,7 @@ cp backend/.env.example backend/.env
 
 # 前端环境变量
 cp frontend/.env.example frontend/.env.local
-# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_API_URL=http://localhost:8000
+# 编辑 frontend/.env.local 文件，设置 NEXT_PUBLIC_URL=http://localhost
 ```
 
 3. 启动本地 PostgreSQL 数据库
@@ -186,9 +186,9 @@ poetry run alembic downgrade -1
 cp frontend/.env.example frontend/.env.local
 # 编辑 frontend/.env.local，配置以下必需变量：
 # - NODE_ENV=production
-# - NEXTAUTH_URL=<你的生产环境URL>
+# - NEXT_PUBLIC_URL=<你的生产环境URL，例如 https://yourdomain.com>
 # - NEXTAUTH_SECRET=<强随机密钥>
-# - NEXT_PUBLIC_API_URL=<API访问地址>
+# 注意：API URL 会自动从 NEXT_PUBLIC_URL + /api 生成
 ```
 
 2. 配置后端环境变量（如需要）

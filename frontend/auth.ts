@@ -10,9 +10,9 @@ const getServerApiUrl = () => {
     return process.env.API_URL;
   }
   
-  const publicUrl = process.env.NEXT_PUBLIC_API_URL;
+  const publicUrl = process.env.NEXT_PUBLIC_URL;
   
-  // 如果 NEXT_PUBLIC_API_URL 为空（通过 nginx 代理）
+  // 如果 NEXT_PUBLIC_URL 为空（通过 nginx 代理）
   if (!publicUrl || publicUrl.trim() === "") {
     // 检查是否在 Docker 容器内（通过检查环境变量或文件系统）
     // 如果在容器内，使用 Docker 内部网络名称；否则使用 localhost
@@ -23,13 +23,13 @@ const getServerApiUrl = () => {
     return isInDocker ? "http://backend:8000" : "http://localhost:8000";
   }
   
-  // 如果 NEXT_PUBLIC_API_URL 包含 localhost，说明是本地开发，服务端也使用 localhost
+  // 如果 NEXT_PUBLIC_URL 包含 localhost，说明是本地开发，服务端也使用 localhost
   if (publicUrl.includes("localhost")) {
     return "http://localhost:8000";
   }
   
-  // 其他情况直接使用 publicUrl
-  return publicUrl || "http://localhost:8000";
+  // 其他情况直接使用 publicUrl + /api（不加后端端口，因为通过 nginx）
+  return `${publicUrl}/api`;
 };
 
 const API_URL = getServerApiUrl();
@@ -160,14 +160,14 @@ export const authConfig = {
       const isOnAuthPage = nextUrl.pathname.startsWith("/auth");
       const isOnRoot = nextUrl.pathname === "/";
       
-      // 获取正确的 base URL，优先使用 NEXTAUTH_URL
+      // 获取正确的 base URL，直接使用 NEXT_PUBLIC_URL
       const getBaseUrl = () => {
-        const nextAuthUrl = process.env.NEXTAUTH_URL;
-        if (nextAuthUrl) {
-          return nextAuthUrl;
+        const publicUrl = process.env.NEXT_PUBLIC_URL;
+        if (publicUrl) {
+          return publicUrl;
         }
-        // 如果 NEXTAUTH_URL 未设置，使用 nextUrl 的 origin
-        // 注意：在生产环境中应该始终设置 NEXTAUTH_URL
+        // 如果 NEXT_PUBLIC_URL 未设置，使用 nextUrl 的 origin
+        // 注意：在生产环境中应该始终设置 NEXT_PUBLIC_URL
         return nextUrl.origin;
       };
       

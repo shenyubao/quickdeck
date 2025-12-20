@@ -209,6 +209,26 @@ main() {
             check_dependencies
             pull_images
             ;;
+        update)
+            log_info "更新并重启服务..."
+            check_dependencies
+            check_prod_env
+            
+            # 1. 拉取最新镜像
+            pull_images
+            
+            # 2. 停止并移除旧容器
+            log_info "停止并移除旧容器..."
+            docker-compose -f "$COMPOSE_FILE" down
+            log_success "旧容器已移除"
+            
+            # 3. 启动新服务
+            start_services
+            sleep 5
+            show_status
+            
+            log_success "服务更新完成"
+            ;;
         *)
             echo "QuickDeck 服务器管理脚本"
             echo ""
@@ -222,6 +242,7 @@ main() {
             echo "  logs [服务] - 查看日志"
             echo "  migrate    - 运行数据库迁移"
             echo "  pull       - 拉取 Docker 镜像"
+            echo "  update     - 更新服务（拉取镜像、移除旧容器、启动新服务）"
             exit 1
             ;;
     esac

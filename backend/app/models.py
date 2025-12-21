@@ -270,4 +270,19 @@ class Credential(BaseModel):
     )
 
 
+# 系统配置模型
+class SystemConfig(BaseModel):
+    __tablename__ = "system_configs"
+    
+    name = Column(String, unique=True, nullable=False, index=True, comment="配置名称（唯一标识）")
+    value = Column(Text, nullable=True, comment="配置值")
+    description = Column(Text, nullable=True, comment="配置描述")
+    default_value = Column(Text, nullable=True, comment="默认值")
+    
+    # 索引
+    __table_args__ = (
+        {"comment": "系统配置表"}
+    )
+
+
 

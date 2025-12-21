@@ -307,3 +307,30 @@ class CredentialResponse(CredentialBase):
     class Config:
         from_attributes = True
 
+
+# 系统配置相关 schemas
+class SystemConfigBase(BaseModel):
+    name: str
+    value: Optional[str] = None
+    description: Optional[str] = None
+    default_value: Optional[str] = None
+
+
+class SystemConfigCreate(SystemConfigBase):
+    pass
+
+
+class SystemConfigUpdate(BaseModel):
+    value: Optional[str] = None
+    description: Optional[str] = None
+    default_value: Optional[str] = None
+
+
+class SystemConfigResponse(SystemConfigBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+

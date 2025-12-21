@@ -834,3 +834,114 @@ export const userApi = {
   },
 };
 
+/**
+ * 系统配置相关类型
+ */
+export interface SystemConfig {
+  id: number;
+  name: string;
+  value?: string;
+  description?: string;
+  default_value?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface SystemConfigCreate {
+  name: string;
+  value?: string;
+  description?: string;
+  default_value?: string;
+}
+
+export interface SystemConfigUpdate {
+  value?: string;
+  description?: string;
+  default_value?: string;
+}
+
+/**
+ * 系统配置相关 API
+ */
+export const systemConfigApi = {
+  /**
+   * 获取所有系统配置
+   */
+  async getAll(): Promise<SystemConfig[]> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<SystemConfig[]>(response);
+  },
+
+  /**
+   * 获取单个系统配置
+   */
+  async getById(id: number): Promise<SystemConfig> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config/${id}`, {
+      method: "GET",
+      headers,
+    });
+    return handleResponse<SystemConfig>(response);
+  },
+
+  /**
+   * 创建系统配置
+   */
+  async create(data: SystemConfigCreate): Promise<SystemConfig> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<SystemConfig>(response);
+  },
+
+  /**
+   * 更新系统配置
+   */
+  async update(id: number, data: SystemConfigUpdate): Promise<SystemConfig> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(data),
+    });
+    return handleResponse<SystemConfig>(response);
+  },
+
+  /**
+   * 还原系统配置到默认值
+   */
+  async reset(id: number): Promise<SystemConfig> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config/${id}/reset`, {
+      method: "POST",
+      headers,
+    });
+    return handleResponse<SystemConfig>(response);
+  },
+
+  /**
+   * 删除系统配置
+   */
+  async delete(id: number): Promise<void> {
+    const headers = await getAuthHeaders();
+    const apiUrl = getApiUrlValue();
+    const response = await fetch(`${apiUrl}/api/system-config/${id}`, {
+      method: "DELETE",
+      headers,
+    });
+    return handleResponse<void>(response);
+  },
+};
+

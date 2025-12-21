@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import auth, projects, jobs, executions, credentials, users, upload
+from app.routers import auth, projects, jobs, executions, credentials, users, upload, system_config
 from app.init_db import init_db
 from app.config import settings
 from alembic.config import Config
@@ -165,6 +165,7 @@ app.include_router(executions.router)
 app.include_router(credentials.router)
 app.include_router(users.router)
 app.include_router(upload.router)
+app.include_router(system_config.router)
 
 
 @app.on_event("startup")

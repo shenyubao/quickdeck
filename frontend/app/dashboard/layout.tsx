@@ -27,7 +27,7 @@ import {
   TeamOutlined,
 } from "@ant-design/icons";
 import { signOut, useSession } from "next-auth/react";
-import { projectApi, type Project } from "@/lib/api";
+import { projectApi, systemConfigApi, type Project } from "@/lib/api";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -58,8 +58,17 @@ export default function DashboardLayout({
     return externalCurrentProject || null;
   });
   
+  // 从 localStorage 初始化站点名称（避免闪烁）
+  const [siteName, setSiteName] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("siteName") || "QuickDeck";
+    }
+    return "QuickDeck";
+  });
+  
   // 使用 ref 防止重复请求
   const isLoadingRef = useRef(false);
+  const isLoadingSiteNameRef = useRef(false);
   const onProjectChangeRef = useRef(onProjectChange);
   
   // 同步 onProjectChange ref
@@ -122,14 +131,47 @@ export default function DashboardLayout({
       setLoading(false);
       isLoadingRef.current = false;
     }
-  }, [session]);
+  }, []); // 移除 session 依赖
 
   useEffect(() => {
     // 只有在用户已登录时才加载项目列表
     if (session) {
       loadProjects();
     }
-  }, [loadProjects, session]);
+  }, [session, loadProjects]); // 保持依赖，但 loadProjects 不再频繁变化
+
+  // 加载站点名称配置
+  const loadSiteName = useCallback(async () => {
+    // 防止重复请求
+    if (isLoadingSiteNameRef.current) {
+      return;
+    }
+    
+    isLoadingSiteNameRef.current = true;
+    
+    try {
+      const configs = await systemConfigApi.getAll();
+      const siteNameConfig = configs.find((config) => config.name === "site_name");
+      if (siteNameConfig?.value) {
+        setSiteName(siteNameConfig.value);
+        // 缓存到 localStorage
+        if (typeof window !== "undefined") {
+          localStorage.setItem("siteName", siteNameConfig.value);
+        }
+      }
+    } catch (error) {
+      // 静默失败，使用默认值或缓存值
+      console.error("加载站点名称失败:", error);
+    } finally {
+      isLoadingSiteNameRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session) {
+      loadSiteName();
+    }
+  }, [session, loadSiteName]); // loadSiteName 现在是稳定的
 
   // 监听项目列表更新事件
   useEffect(() => {
@@ -145,10 +187,27 @@ export default function DashboardLayout({
     };
   }, [loadProjects]);
 
+  // 监听站点名称更新事件
+  useEffect(() => {
+    const handleSiteNameUpdate = (event: CustomEvent) => {
+      const newSiteName = event.detail?.siteName;
+      if (newSiteName) {
+        setSiteName(newSiteName);
+      }
+    };
+
+    window.addEventListener("siteNameUpdated", handleSiteNameUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("siteNameUpdated", handleSiteNameUpdate as EventListener);
+    };
+  }, []);
+
   // 根据路径确定选中的菜单项
   const getSelectedKey = () => {
     if (pathname?.includes("/projects")) return "project-management";
     if (pathname?.includes("/users")) return "user-management";
+    if (pathname?.includes("/system-config")) return "system-config";
     if (pathname?.includes("/history")) return "history";
     if (pathname?.includes("/credentials")) return "credentials";
     return "tasks";
@@ -251,7 +310,7 @@ export default function DashboardLayout({
           },
         ]
       : []),
-    // 只有管理员才能看到项目管理和用户管理
+    // 只有管理员才能看到项目管理、用户管理和系统配置
     ...(isAdmin
       ? [
           {
@@ -263,6 +322,11 @@ export default function DashboardLayout({
             key: "user-management",
             icon: <TeamOutlined />,
             label: "用户管理",
+          },
+          {
+            key: "system-config",
+            icon: <SettingOutlined />,
+            label: "系统配置",
           },
         ]
       : []),
@@ -280,6 +344,8 @@ export default function DashboardLayout({
       router.push("/dashboard/projects");
     } else if (key === "user-management") {
       router.push("/dashboard/users");
+    } else if (key === "system-config") {
+      router.push("/dashboard/system-config");
     }
   };
 
@@ -313,7 +379,7 @@ export default function DashboardLayout({
               alignItems: "center",
             }}
           >
-            QuickDeck
+            {siteName}
           </div>
           {projects.length > 0 ? (
             <Space size="small" align="center" style={{ height: "100%" }}>

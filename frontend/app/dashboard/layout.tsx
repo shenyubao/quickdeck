@@ -13,6 +13,7 @@ import {
   Typography,
   Empty,
   message,
+  Drawer,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -25,6 +26,7 @@ import {
   PlusOutlined,
   KeyOutlined,
   TeamOutlined,
+  MenuOutlined,
 } from "@ant-design/icons";
 import { signOut, useSession } from "next-auth/react";
 import { projectApi, systemConfigApi, type Project } from "@/lib/api";
@@ -214,6 +216,20 @@ export default function DashboardLayout({
   };
 
   const [selectedMenu, setSelectedMenu] = useState(getSelectedKey());
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     // 只有在用户已登录时才执行重定向逻辑
@@ -334,6 +350,7 @@ export default function DashboardLayout({
 
   const handleMenuClick = ({ key }: { key: string }) => {
     setSelectedMenu(key);
+    setDrawerVisible(false); // 点击菜单后关闭抽屉
     if (key === "tasks") {
       router.push("/dashboard");
     } else if (key === "history") {
@@ -360,7 +377,7 @@ export default function DashboardLayout({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0 24px",
+          padding: isMobile ? "0 12px" : "0 24px",
           background: "#fff",
           boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
           height: 64,
@@ -368,20 +385,37 @@ export default function DashboardLayout({
         }}
       >
         {/* 左侧：Logo 和项目切换 */}
-        <Space size="large" align="center">
+        <Space size={isMobile ? "small" : "large"} align="center">
+          {/* 移动端汉堡菜单 */}
+          {isMobile && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              onClick={() => setDrawerVisible(true)}
+              style={{
+                width: 40,
+                height: 40,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "18px",
+              }}
+            />
+          )}
           <div
             style={{
-              fontSize: "20px",
+              fontSize: isMobile ? "16px" : "20px",
               fontWeight: "bold",
               color: "#1890ff",
               lineHeight: "20px",
               display: "flex",
               alignItems: "center",
+              whiteSpace: "nowrap",
             }}
           >
             {siteName}
           </div>
-          {projects.length > 0 ? (
+          {!isMobile && projects.length > 0 ? (
             <Space size="small" align="center" style={{ height: "100%" }}>
               <Select
                 value={currentProject}
@@ -403,7 +437,7 @@ export default function DashboardLayout({
                 className="project-selector"
               />
             </Space>
-          ) : !loading ? (
+          ) : !isMobile && !loading ? (
             <Space size="small" align="center">
               <Typography.Text
                 type="secondary"
@@ -432,21 +466,23 @@ export default function DashboardLayout({
         </Space>
 
         {/* 右侧：帮助和用户信息 */}
-        <Space size="middle">
+        <Space size={isMobile ? "small" : "middle"}>
           {/* 帮助入口 */}
-          <Button
-            type="text"
-            icon={<QuestionCircleOutlined />}
-            style={{
-              width: 40,
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "16px",
-            }}
-            title="帮助"
-          />
+          {!isMobile && (
+            <Button
+              type="text"
+              icon={<QuestionCircleOutlined />}
+              style={{
+                width: 40,
+                height: 40,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "16px",
+              }}
+              title="帮助"
+            />
+          )}
 
           {/* 用户信息 */}
           <Dropdown menu={{ items: userMenuItems }} trigger={["click"]}>
@@ -459,61 +495,86 @@ export default function DashboardLayout({
               className="user-info"
             >
               <Avatar icon={<UserOutlined />} />
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <Text strong>{userName}</Text>
-                {userEmail && (
-                  <Text type="secondary" style={{ fontSize: "12px" }}>
-                    {userEmail}
-                  </Text>
-                )}
-              </div>
+              {!isMobile && (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <Text strong>{userName}</Text>
+                  {userEmail && (
+                    <Text type="secondary" style={{ fontSize: "12px" }}>
+                      {userEmail}
+                    </Text>
+                  )}
+                </div>
+              )}
             </Space>
           </Dropdown>
-
-          {/* 移动端退出登录按钮 */}
-          <Button
-            type="text"
-            icon={<LogoutOutlined />}
-            onClick={handleSignOut}
-            className="mobile-only"
-            style={{
-              width: 40,
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "16px",
-            }}
-            title="退出登录"
-          />
         </Space>
       </Header>
 
       <Layout>
-        {/* 侧边栏 */}
-        <Sider
-          width={200}
-          style={{
-            background: "#fff",
-            overflow: "auto",
-            height: "calc(100vh - 64px)",
+        {/* 桌面端侧边栏 */}
+        {!isMobile && (
+          <Sider
+            width={200}
+            style={{
+              background: "#fff",
+              overflow: "auto",
+              height: "calc(100vh - 64px)",
+            }}
+          >
+            <Menu
+              mode="inline"
+              selectedKeys={[selectedMenu]}
+              items={sideMenuItems}
+              style={{ height: "100%", borderRight: 0 }}
+              onClick={handleMenuClick}
+            />
+          </Sider>
+        )}
+
+        {/* 移动端抽屉式侧边栏 */}
+        <Drawer
+          title={
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div style={{ fontSize: "18px", fontWeight: "bold", color: "#1890ff" }}>
+                {siteName}
+              </div>
+              {projects.length > 0 && (
+                <Select
+                  value={currentProject}
+                  onChange={handleProjectChange}
+                  options={projectOptions}
+                  style={{ width: "100%" }}
+                  loading={loading}
+                  placeholder="选择项目"
+                  className="project-selector"
+                />
+              )}
+            </div>
+          }
+          placement="left"
+          onClose={() => setDrawerVisible(false)}
+          open={drawerVisible}
+          width={280}
+          closable={false}
+          styles={{
+            body: { padding: 0 }
           }}
         >
           <Menu
             mode="inline"
             selectedKeys={[selectedMenu]}
             items={sideMenuItems}
-            style={{ height: "100%", borderRight: 0 }}
+            style={{ border: 0 }}
             onClick={handleMenuClick}
           />
-        </Sider>
+        </Drawer>
 
         {/* 内容区域 */}
         <Layout style={{ minHeight: "calc(100vh - 64px)" }}>
           <Content
             style={{
-              margin: "16px",
-              padding: 16,
+              margin: isMobile ? "8px" : "16px",
+              padding: isMobile ? 12 : 16,
               minHeight: 280,
               background: "#fff",
             }}
@@ -524,19 +585,6 @@ export default function DashboardLayout({
       </Layout>
 
       <style jsx global>{`
-        @media (max-width: 768px) {
-          .desktop-only {
-            display: none !important;
-          }
-          .user-info .ant-typography {
-            display: none;
-          }
-        }
-        @media (min-width: 769px) {
-          .mobile-only {
-            display: none !important;
-          }
-        }
         /* 强化项目选择器的显示 - 让项目名更突出 */
         .project-selector {
           display: flex !important;
@@ -560,6 +608,62 @@ export default function DashboardLayout({
         }
         .project-selector:hover .ant-select-selector {
           color: #40a9ff !important;
+        }
+
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+          /* 确保移动端内容不溢出 */
+          body {
+            overflow-x: hidden;
+          }
+          
+          /* 表格横向滚动 */
+          .ant-table-wrapper {
+            overflow-x: auto;
+          }
+          
+          /* 表单优化 */
+          .ant-form-item {
+            margin-bottom: 16px;
+          }
+          
+          /* 按钮组优化 */
+          .ant-space {
+            flex-wrap: wrap;
+          }
+          
+          /* 卡片间距优化 */
+          .ant-card {
+            margin-bottom: 12px;
+          }
+          
+          /* 抽屉标题区域优化 */
+          .ant-drawer-header {
+            padding: 16px;
+          }
+          
+          .ant-drawer-body {
+            padding: 0;
+          }
+
+          /* 模态框优化 */
+          .ant-modal {
+            max-width: calc(100vw - 32px) !important;
+            margin: 16px auto;
+          }
+
+          /* 下拉菜单优化 */
+          .ant-select-dropdown {
+            max-width: calc(100vw - 32px);
+          }
+        }
+
+        /* 平板设备优化 */
+        @media (min-width: 769px) and (max-width: 1024px) {
+          .ant-layout-sider {
+            width: 180px !important;
+            min-width: 180px !important;
+          }
         }
       `}</style>
     </Layout>

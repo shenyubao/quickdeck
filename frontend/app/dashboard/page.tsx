@@ -70,6 +70,22 @@ export default function Dashboard() {
   const [jsonSchemaValues, setJsonSchemaValues] = useState<Record<string, any>>({});
   // 存储 JSON Schema 表单的 ref
   const jsonSchemaFormRefs = React.useRef<Record<string, JsonSchemaFormRef | null>>({});
+  
+  // 移动端相关状态
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'list' | 'detail'>('list');
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 获取所有节点的 keys（用于展开全部）
   const getAllKeys = useCallback((nodes: TreeNode[]): React.Key[] => {
@@ -288,6 +304,12 @@ export default function Dashboard() {
       // 点击工具节点
       setSelectedJob(node.job);
       setJsonSchemaValues({}); // 清空 JSON Schema 值
+      
+      // 移动端切换到详情页
+      if (isMobile) {
+        setMobileTab('detail');
+      }
+      
       // 获取工具详情（包含 workflow）
       try {
         setLoadingDetail(true);
@@ -734,72 +756,502 @@ export default function Dashboard() {
     );
   }
 
+  // 左侧工具树组件
+  const JobTreeSider = () => (
+    <Sider
+      width={isMobile ? '100%' : siderWidth}
+      style={{
+        background: "#fff",
+        borderRight: isMobile ? "none" : "1px solid #f0f0f0",
+        overflow: "auto",
+        height: isMobile ? "auto" : undefined,
+      }}
+    >
+      <div
+        style={{
+          padding: isMobile ? "12px" : "16px",
+          borderBottom: "1px solid #f0f0f0",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "8px",
+        }}
+      >
+        <Space size="small">
+          <Button type="link" size="small" onClick={handleExpandAll}>
+            展开全部
+          </Button>
+          <Button type="link" size="small" onClick={handleCollapseAll}>
+            折叠全部
+          </Button>
+        </Space>
+        <Button
+          type="link"
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={() => router.push("/dashboard/jobs")}
+        >
+          新建工具
+        </Button>
+      </div>
+      <div style={{ padding: "8px" }}>
+        <Spin spinning={loading}>
+          {treeData.length > 0 ? (
+            <Tree
+              treeData={treeData}
+              selectedKeys={
+                selectedJob 
+                  ? [`job-${selectedJob.id}`] 
+                  : []
+              }
+              expandedKeys={expandedKeys}
+              onSelect={handleSelect}
+              onExpand={setExpandedKeys}
+              blockNode
+              showIcon={false}
+              showLine={{ showLeafIcon: false }}
+            />
+          ) : (
+            <Empty
+              description="暂无工具"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ marginTop: 50 }}
+            />
+          )}
+        </Spin>
+      </div>
+    </Sider>
+  );
+
+  // 右侧详情内容组件
+  const JobDetailContent = () => (
+    <Content
+      style={{
+        background: "#fff",
+        padding: isMobile ? "16px 12px" : "24px",
+        overflow: "auto",
+      }}
+    >
+      {selectedJob ? (
+        <Spin spinning={loadingDetail}>
+          <div>
+            {/* 移动端返回按钮 */}
+            {isMobile && (
+              <Button
+                type="link"
+                onClick={() => setMobileTab('list')}
+                style={{ marginBottom: 12, padding: 0 }}
+              >
+                ← 返回工具列表
+              </Button>
+            )}
+            
+            <div style={{ marginBottom: isMobile ? 12 : 16 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 8,
+                  flexWrap: "wrap",
+                  gap: "8px",
+                }}
+              >
+                <Title level={5} style={{ margin: 0, fontSize: isMobile ? '16px' : '18px' }}>
+                  {selectedJob.name}
+                </Title>
+                <Dropdown
+                  menu={{ items: jobMenuItems }}
+                  trigger={["click"]}
+                  placement="bottomRight"
+                >
+                  <Button icon={<MoreOutlined />} size={isMobile ? 'small' : 'middle'}>
+                    更多
+                  </Button>
+                </Dropdown>
+              </div>
+              {/* 显示负责人信息 */}
+              {jobDetail?.owner && (
+                <div style={{ marginTop: 4 }}>
+                  <Text type="secondary" style={{ fontSize: isMobile ? "12px" : "14px" }}>
+                    负责人: {jobDetail.owner.nickname || jobDetail.owner.username}
+                  </Text>
+                </div>
+              )}
+            </div>
+            {selectedJob.description && (
+              <div style={{ marginBottom: isMobile ? 12 : 16 }}>
+                <Text type="secondary" style={{ fontSize: isMobile ? "13px" : "14px" }}>描述: </Text>
+                <Text style={{ fontSize: isMobile ? "13px" : "14px" }}>{selectedJob.description}</Text>
+              </div>
+            )}
+            
+            {/* 参数列表 */}
+            <div style={{ marginTop: isMobile ? 16 : 24 }}>
+              {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
+                <>
+                  <Title level={5} style={{ marginBottom: isMobile ? 12 : 16, fontSize: isMobile ? '15px' : '16px' }}>
+                    运行参数
+                  </Title>
+                </>
+              ) : (
+                <Text type="secondary" style={{ fontSize: isMobile ? "13px" : "14px" }}>该工具没有配置参数</Text>
+              )}
+              <Form
+                form={runForm}
+                layout="vertical"
+                style={{ maxWidth: isMobile ? '100%' : 600 }}
+              >
+                {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => {
+                  // 如果是 json_schema 类型，直接渲染，不使用 Form.Item
+                  if (option.option_type === "json_schema") {
+                    return (
+                      <div key={option.id} style={{ marginBottom: isMobile ? "20px" : "24px" }}>
+                        <div style={{ marginBottom: "8px" }}>
+                          <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
+                            {option.display_name || option.name}
+                          </Text>
+                          {option.required && (
+                            <Text type="danger" style={{ marginLeft: 4 }}>
+                              *
+                            </Text>
+                          )}
+                        </div>
+                        {option.description && (
+                          <div style={{ marginBottom: "8px", color: "#666", fontSize: isMobile ? "11px" : "12px" }}>
+                            {option.description}
+                          </div>
+                        )}
+                        {renderOptionInput(option)}
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <Form.Item
+                      key={option.id}
+                      name={option.name}
+                      label={
+                        <div>
+                          <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
+                            {option.display_name || option.name}
+                          </Text>
+                          {option.required && (
+                            <Text type="danger" style={{ marginLeft: 4 }}>
+                              *
+                            </Text>
+                          )}
+                        </div>
+                      }
+                      tooltip={option.description}
+                      rules={[
+                        {
+                          required: option.required,
+                          message: `请输入${option.display_name || option.name}`,
+                        },
+                      ]}
+                    >
+                      {renderOptionInput(option)}
+                    </Form.Item>
+                  );
+                })}
+              </Form>
+              <div style={{ marginTop: isMobile ? 12 : 16, textAlign: isMobile ? "center" : "right" }}>
+                <Button
+                  type="primary"
+                  icon={<CaretRightOutlined />}
+                  onClick={handleRunJob}
+                  loading={running}
+                  disabled={running}
+                  size={isMobile ? 'middle' : 'middle'}
+                  block={isMobile}
+                >
+                  {running ? "运行中..." : "运行"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Spin>
+      ) : (
+        <div style={{ textAlign: "center", padding: isMobile ? "30px 0" : "50px 0" }}>
+          <Empty
+            description="请选择一个工具查看详情"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          />
+        </div>
+      )}
+
+      {/* 工具结果区域 */}
+      {selectedJob && (
+        <div style={{ marginTop: isMobile ? 24 : 32, borderTop: "1px solid #f0f0f0", paddingTop: isMobile ? 12 : 16 }}>
+          <Title level={5} style={{ margin: 0, marginBottom: isMobile ? 12 : 16, fontSize: isMobile ? '15px' : '16px' }}>
+            工具结果
+          </Title>
+          {running ? (
+            <div style={{ textAlign: "center", padding: isMobile ? "30px 0" : "50px 0" }}>
+              <Spin size="large" />
+              <div style={{ marginTop: 16, color: "#666", fontSize: isMobile ? "13px" : "14px" }}>工具正在运行中...</div>
+            </div>
+          ) : runError ? (
+            <div
+              style={{
+                padding: isMobile ? 12 : 16,
+                background: "#fff2f0",
+                borderRadius: 4,
+                border: "1px solid #ffccc7",
+                color: "#cf1322",
+                fontSize: isMobile ? "12px" : "14px",
+              }}
+            >
+              <Text strong>执行失败：</Text>
+              <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: isMobile ? "11px" : "13px" }}>
+                {runError}
+              </pre>
+            </div>
+          ) : jobResultHtml || jobResult ? (
+            <Tabs
+              defaultActiveKey="result"
+              size={isMobile ? 'small' : 'middle'}
+              items={[
+                {
+                  key: "result",
+                  label: "运行结果",
+                  children: jobResult?.text ? (
+                    <div
+                      style={{
+                        padding: isMobile ? 12 : 16,
+                        background: "#fafafa",
+                        borderRadius: 4,
+                        border: "1px solid #f0f0f0",
+                        maxHeight: isMobile ? "400px" : "600px",
+                        overflow: "auto",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontFamily: "monospace",
+                        fontSize: isMobile ? "11px" : "13px",
+                      }}
+                    >
+                      {jobResult.text}
+                    </div>
+                  ) : jobResultHtml ? (
+                    <div
+                      dangerouslySetInnerHTML={{ __html: jobResultHtml }}
+                      style={{
+                        padding: isMobile ? 12 : 16,
+                        background: "#fafafa",
+                        borderRadius: 4,
+                        border: "1px solid #f0f0f0",
+                        maxHeight: isMobile ? "400px" : "600px",
+                        overflow: "auto",
+                        fontSize: isMobile ? "12px" : "14px",
+                      }}
+                    />
+                  ) : (
+                    <Empty
+                      description="暂无运行结果"
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      style={{ marginTop: 50 }}
+                    />
+                  ),
+                },
+                {
+                  key: "logs",
+                  label: "执行日志",
+                  children: jobLogs ? (
+                    <div
+                      style={{
+                        padding: isMobile ? 12 : 16,
+                        background: "#fafafa",
+                        borderRadius: 4,
+                        border: "1px solid #f0f0f0",
+                        maxHeight: isMobile ? "400px" : "600px",
+                        overflow: "auto",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontFamily: "monospace",
+                        fontSize: isMobile ? "10px" : "12px",
+                      }}
+                    >
+                      {jobLogs}
+                    </div>
+                  ) : (
+                    <Empty
+                      description="暂无执行日志"
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      style={{ marginTop: 50 }}
+                    />
+                  ),
+                },
+                {
+                  key: "dataset",
+                  label: "数据详情",
+                  children: jobResult?.dataset !== null && jobResult?.dataset !== undefined ? (
+                    <div
+                      style={{
+                        padding: isMobile ? 12 : 16,
+                        background: "#fafafa",
+                        borderRadius: 4,
+                        border: "1px solid #f0f0f0",
+                        maxHeight: isMobile ? "400px" : "600px",
+                        overflow: "auto",
+                      }}
+                    >
+                      {Array.isArray(jobResult.dataset) && jobResult.dataset.length > 0 && typeof jobResult.dataset[0] === "object" ? (
+                        // 如果是对象数组，渲染为表格
+                        <div style={{ overflowX: "auto" }}>
+                          <table
+                            style={{
+                              width: "100%",
+                              borderCollapse: "collapse",
+                              background: "#fff",
+                              fontSize: isMobile ? "11px" : "13px",
+                            }}
+                          >
+                            <thead>
+                              <tr style={{ background: "#f5f5f5" }}>
+                                {Object.keys(jobResult.dataset[0]).map((key) => (
+                                  <th
+                                    key={key}
+                                    style={{
+                                      padding: isMobile ? "6px 8px" : "8px 12px",
+                                      textAlign: "left",
+                                      border: "1px solid #e8e8e8",
+                                      fontWeight: 600,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {key}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {jobResult.dataset.map((row: any, index: number) => (
+                                <tr key={index}>
+                                  {Object.keys(jobResult.dataset[0]).map((key) => (
+                                    <td
+                                      key={key}
+                                      style={{
+                                        padding: isMobile ? "6px 8px" : "8px 12px",
+                                        border: "1px solid #e8e8e8",
+                                      }}
+                                    >
+                                      {typeof row[key] === "object"
+                                        ? JSON.stringify(row[key])
+                                        : String(row[key] ?? "")}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        // 其他情况，显示为 JSON
+                        <pre
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontFamily: "monospace",
+                            margin: 0,
+                            background: "#fff",
+                            padding: isMobile ? 8 : 12,
+                            borderRadius: 4,
+                            fontSize: isMobile ? "10px" : "12px",
+                          }}
+                        >
+                          {JSON.stringify(jobResult.dataset, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  ) : (
+                    <Empty
+                      description="暂无数据详情"
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      style={{ marginTop: 50 }}
+                    />
+                  ),
+                },
+              ]}
+            />
+          ) : (
+            <Empty
+              description="暂无执行结果"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ marginTop: 50 }}
+            />
+          )}
+        </div>
+      )}
+    </Content>
+  );
+
+  // 移动端布局：使用 Tabs 切换列表和详情
+  if (isMobile) {
+    return (
+      <div style={{ height: "100%", background: "#f0f2f5" }}>
+        {mobileTab === 'list' ? (
+          <div style={{ height: "100%", background: "#fff" }}>
+            <JobTreeSider />
+          </div>
+        ) : (
+          <div style={{ height: "100%", overflow: "auto" }}>
+            <JobDetailContent />
+          </div>
+        )}
+        
+        {/* 工具编辑/创建模态框 */}
+        <Modal
+          title={editingJob ? "编辑工具" : "新建工具"}
+          open={isJobModalOpen}
+          onOk={handleSaveJob}
+          onCancel={() => {
+            setIsJobModalOpen(false);
+            form.resetFields();
+            setEditingJob(null);
+          }}
+          okText="确定"
+          cancelText="取消"
+          width="100%"
+          style={{ top: 0, paddingBottom: 0, maxWidth: "100vw" }}
+        >
+          <Form form={form} layout="vertical">
+            <Form.Item
+              name="name"
+              label="工具名称"
+              rules={[{ required: true, message: "请输入工具名称" }]}
+            >
+              <Input placeholder="请输入工具名称" />
+            </Form.Item>
+            <Form.Item
+              name="path"
+              label="工具路径"
+              rules={[{ required: true, message: "请输入工具路径" }]}
+            >
+              <Input placeholder="例如: 数据接入/炼丹炉" />
+            </Form.Item>
+            <Form.Item name="description" label="描述">
+              <Input.TextArea
+                placeholder="请输入工具描述"
+                rows={3}
+                showCount
+                maxLength={200}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+      </div>
+    );
+  }
+
+  // 桌面端布局：左右分栏
   return (
     <Layout style={{ height: "100%", background: "#f0f2f5" }}>
       <Layout style={{ height: "100%" }}>
         {/* 左侧工具树 */}
         <div style={{ position: "relative", display: "flex" }}>
-          <Sider
-            width={siderWidth}
-            style={{
-              background: "#fff",
-              borderRight: "1px solid #f0f0f0",
-              overflow: "auto",
-            }}
-          >
-          <div
-            style={{
-              padding: "16px",
-              borderBottom: "1px solid #f0f0f0",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <Space>
-              <Button type="link" size="small" onClick={handleExpandAll}>
-                展开全部
-              </Button>
-              <Button type="link" size="small" onClick={handleCollapseAll}>
-                折叠全部
-              </Button>
-            </Space>
-            <Button
-              type="link"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={() => router.push("/dashboard/jobs")}
-            >
-              新建工具
-            </Button>
-          </div>
-          <div style={{ padding: "8px" }}>
-            <Spin spinning={loading}>
-              {treeData.length > 0 ? (
-                <Tree
-                  treeData={treeData}
-                  selectedKeys={
-                    selectedJob 
-                      ? [`job-${selectedJob.id}`] 
-                      : []
-                  }
-                  expandedKeys={expandedKeys}
-                  onSelect={handleSelect}
-                  onExpand={setExpandedKeys}
-                  blockNode
-                  showIcon={false}
-                  showLine={{ showLeafIcon: false }}
-                />
-              ) : (
-                <Empty
-                  description="暂无工具"
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  style={{ marginTop: 50 }}
-                />
-              )}
-            </Spin>
-          </div>
-          </Sider>
+          <JobTreeSider />
           {/* 可拖拽的分隔条 */}
           <div
             onMouseDown={handleMouseDown}
@@ -828,335 +1280,7 @@ export default function Dashboard() {
         </div>
 
         {/* 右侧内容区 */}
-        <Content
-          style={{
-            background: "#fff",
-            padding: "24px",
-            overflow: "auto",
-          }}
-        >
-          {selectedJob ? (
-            <Spin spinning={loadingDetail}>
-              <div>
-                <div style={{ marginBottom: 16 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Title level={5} style={{ margin: 0 }}>
-                      {selectedJob.name}
-                    </Title>
-                    <Dropdown
-                      menu={{ items: jobMenuItems }}
-                      trigger={["click"]}
-                      placement="bottomRight"
-                    >
-                      <Button icon={<MoreOutlined />}>更多</Button>
-                    </Dropdown>
-                  </div>
-                  {/* 显示负责人信息 */}
-                  {jobDetail?.owner && (
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary" style={{ fontSize: "14px" }}>
-                        负责人: {jobDetail.owner.nickname || jobDetail.owner.username}
-                      </Text>
-                    </div>
-                  )}
-                </div>
-                {selectedJob.description && (
-                  <div style={{ marginBottom: 16 }}>
-                    <Text type="secondary">描述: </Text>
-                    <Text>{selectedJob.description}</Text>
-                  </div>
-                )}
-                
-                {/* 参数列表 */}
-                <div style={{ marginTop: 24 }}>
-                  {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 ? (
-                    <>
-                      <Title level={5} style={{ marginBottom: 16 }}>
-                        运行参数
-                      </Title>
-                    </>
-                  ) : (
-                    <Text type="secondary">该工具没有配置参数</Text>
-                  )}
-                  <Form
-                    form={runForm}
-                    layout="vertical"
-                    style={{ maxWidth: 600 }}
-                  >
-                    {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => {
-                      // 如果是 json_schema 类型，直接渲染，不使用 Form.Item
-                      if (option.option_type === "json_schema") {
-                        return (
-                          <div key={option.id} style={{ marginBottom: "24px" }}>
-                            <div style={{ marginBottom: "8px" }}>
-                              <Text strong>{option.display_name || option.name}</Text>
-                              {option.required && (
-                                <Text type="danger" style={{ marginLeft: 4 }}>
-                                  *
-                                </Text>
-                              )}
-                            </div>
-                            {option.description && (
-                              <div style={{ marginBottom: "8px", color: "#666", fontSize: "12px" }}>
-                                {option.description}
-                              </div>
-                            )}
-                            {renderOptionInput(option)}
-                          </div>
-                        );
-                      }
-                      
-                      return (
-                        <Form.Item
-                          key={option.id}
-                          name={option.name}
-                          label={
-                            <div>
-                              <Text strong>{option.display_name || option.name}</Text>
-                              {option.required && (
-                                <Text type="danger" style={{ marginLeft: 4 }}>
-                                  *
-                                </Text>
-                              )}
-                            </div>
-                          }
-                          tooltip={option.description}
-                          rules={[
-                            {
-                              required: option.required,
-                              message: `请输入${option.display_name || option.name}`,
-                            },
-                          ]}
-                        >
-                          {renderOptionInput(option)}
-                        </Form.Item>
-                      );
-                    })}
-                  </Form>
-                  <div style={{ marginTop: 16, textAlign: "right" }}>
-                    <Button
-                      type="primary"
-                      icon={<CaretRightOutlined />}
-                      onClick={handleRunJob}
-                      loading={running}
-                      disabled={running}
-                    >
-                      {running ? "运行中..." : "运行"}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </Spin>
-          ) : (
-            <div style={{ textAlign: "center", padding: "50px 0" }}>
-              <Empty
-                description="请选择一个工具查看详情"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
-            </div>
-          )}
-
-          {/* 工具结果区域 */}
-          {selectedJob && (
-            <div style={{ marginTop: 32, borderTop: "1px solid #f0f0f0", paddingTop: 16 }}>
-              <Title level={5} style={{ margin: 0, marginBottom: 16 }}>
-                工具结果
-              </Title>
-              {running ? (
-                <div style={{ textAlign: "center", padding: "50px 0" }}>
-                  <Spin size="large" />
-                  <div style={{ marginTop: 16, color: "#666" }}>工具正在运行中...</div>
-                </div>
-              ) : runError ? (
-                <div
-                  style={{
-                    padding: 16,
-                    background: "#fff2f0",
-                    borderRadius: 4,
-                    border: "1px solid #ffccc7",
-                    color: "#cf1322",
-                  }}
-                >
-                  <Text strong>执行失败：</Text>
-                  <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                    {runError}
-                  </pre>
-                </div>
-              ) : jobResultHtml || jobResult ? (
-                <Tabs
-                  defaultActiveKey="result"
-                  items={[
-                    {
-                      key: "result",
-                      label: "运行结果",
-                      children: jobResult?.text ? (
-                        <div
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderRadius: 4,
-                            border: "1px solid #f0f0f0",
-                            maxHeight: "600px",
-                            overflow: "auto",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          {jobResult.text}
-                        </div>
-                      ) : jobResultHtml ? (
-                        <div
-                          dangerouslySetInnerHTML={{ __html: jobResultHtml }}
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderRadius: 4,
-                            border: "1px solid #f0f0f0",
-                            maxHeight: "600px",
-                            overflow: "auto",
-                          }}
-                        />
-                      ) : (
-                        <Empty
-                          description="暂无运行结果"
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          style={{ marginTop: 50 }}
-                        />
-                      ),
-                    },
-                    {
-                      key: "logs",
-                      label: "执行日志",
-                      children: jobLogs ? (
-                        <div
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderRadius: 4,
-                            border: "1px solid #f0f0f0",
-                            maxHeight: "600px",
-                            overflow: "auto",
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            fontFamily: "monospace",
-                            fontSize: "12px",
-                          }}
-                        >
-                          {jobLogs}
-                        </div>
-                      ) : (
-                        <Empty
-                          description="暂无执行日志"
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          style={{ marginTop: 50 }}
-                        />
-                      ),
-                    },
-                    {
-                      key: "dataset",
-                      label: "数据详情",
-                      children: jobResult?.dataset !== null && jobResult?.dataset !== undefined ? (
-                        <div
-                          style={{
-                            padding: 16,
-                            background: "#fafafa",
-                            borderRadius: 4,
-                            border: "1px solid #f0f0f0",
-                            maxHeight: "600px",
-                            overflow: "auto",
-                          }}
-                        >
-                          {Array.isArray(jobResult.dataset) && jobResult.dataset.length > 0 && typeof jobResult.dataset[0] === "object" ? (
-                            // 如果是对象数组，渲染为表格
-                            <table
-                              style={{
-                                width: "100%",
-                                borderCollapse: "collapse",
-                                background: "#fff",
-                              }}
-                            >
-                              <thead>
-                                <tr style={{ background: "#f5f5f5" }}>
-                                  {Object.keys(jobResult.dataset[0]).map((key) => (
-                                    <th
-                                      key={key}
-                                      style={{
-                                        padding: "8px 12px",
-                                        textAlign: "left",
-                                        border: "1px solid #e8e8e8",
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      {key}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {jobResult.dataset.map((row: any, index: number) => (
-                                  <tr key={index}>
-                                    {Object.keys(jobResult.dataset[0]).map((key) => (
-                                      <td
-                                        key={key}
-                                        style={{
-                                          padding: "8px 12px",
-                                          border: "1px solid #e8e8e8",
-                                        }}
-                                      >
-                                        {typeof row[key] === "object"
-                                          ? JSON.stringify(row[key])
-                                          : String(row[key] ?? "")}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          ) : (
-                            // 其他情况，显示为 JSON
-                            <pre
-                              style={{
-                                whiteSpace: "pre-wrap",
-                                wordBreak: "break-word",
-                                fontFamily: "monospace",
-                                margin: 0,
-                                background: "#fff",
-                                padding: 12,
-                                borderRadius: 4,
-                              }}
-                            >
-                              {JSON.stringify(jobResult.dataset, null, 2)}
-                            </pre>
-                          )}
-                        </div>
-                      ) : (
-                        <Empty
-                          description="暂无数据详情"
-                          image={Empty.PRESENTED_IMAGE_SIMPLE}
-                          style={{ marginTop: 50 }}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-              ) : (
-                <Empty
-                  description="暂无执行结果"
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  style={{ marginTop: 50 }}
-                />
-              )}
-            </div>
-          )}
-        </Content>
+        <JobDetailContent />
       </Layout>
 
       {/* 工具编辑/创建模态框 */}
@@ -1197,7 +1321,6 @@ export default function Dashboard() {
           </Form.Item>
         </Form>
       </Modal>
-
     </Layout>
   );
 }

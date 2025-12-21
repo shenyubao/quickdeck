@@ -189,6 +189,19 @@ export default function HistoryPage() {
   }>({});
   const [selectedExecution, setSelectedExecution] = useState<JobExecution | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 检测是否为移动设备
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 确保表格容器宽度不超出父容器
   useEffect(() => {
@@ -278,11 +291,13 @@ export default function HistoryPage() {
       title: "执行时间",
       dataIndex: "executed_at",
       key: "executed_at",
-      width: 260,
+      width: isMobile ? 140 : 260,
       render: (text: string) => (
-        <Space>
-          <ClockCircleOutlined />
-          <span>{formatDateTime(text)}</span>
+        <Space size="small">
+          {!isMobile && <ClockCircleOutlined />}
+          <span style={{ fontSize: isMobile ? '12px' : '14px' }}>
+            {isMobile ? formatDateTimeShort(text) : formatDateTime(text)}
+          </span>
         </Space>
       ),
       sorter: true,
@@ -291,18 +306,18 @@ export default function HistoryPage() {
       title: "工具名称",
       dataIndex: "job_name",
       key: "job_name",
-      width: 200,
+      width: isMobile ? 120 : 200,
       render: (text: string, record: JobExecution) => (
         <Button
           type="link"
           onClick={() => handleViewDetail(record)}
-          style={{ padding: 0 }}
+          style={{ padding: 0, fontSize: isMobile ? '12px' : '14px' }}
         >
           {text || `工具 #${record.job_id}`}
         </Button>
       ),
     },
-    {
+    ...(!isMobile ? [{
       title: "执行人",
       dataIndex: "user_nickname",
       key: "user",
@@ -313,8 +328,23 @@ export default function HistoryPage() {
           <span>{text || record.user_username || `用户 #${record.user_id}`}</span>
         </Space>
       ),
-    },
+    }] : []),
     {
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
+      width: isMobile ? 70 : 100,
+      render: (status: string) => (
+        <Tag
+          icon={!isMobile && (status === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />)}
+          color={status === "success" ? "success" : "error"}
+          style={{ fontSize: isMobile ? '11px' : '13px' }}
+        >
+          {status === "success" ? "成功" : "失败"}
+        </Tag>
+      ),
+    },
+    ...(!isMobile ? [{
       title: "执行方式",
       dataIndex: "execution_type",
       key: "execution_type",
@@ -324,22 +354,8 @@ export default function HistoryPage() {
           {type === "manual" ? "手动" : "定时工具"}
         </Tag>
       ),
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
-      render: (status: string) => (
-        <Tag
-          icon={status === "success" ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
-          color={status === "success" ? "success" : "error"}
-        >
-          {status === "success" ? "成功" : "失败"}
-        </Tag>
-      ),
-    },
-    {
+    }] : []),
+    ...(!isMobile ? [{
       title: "输出",
       dataIndex: "output_text",
       key: "output_text",
@@ -349,18 +365,20 @@ export default function HistoryPage() {
         const preview = text.length > 100 ? text.substring(0, 100) + "..." : text;
         return <span>{preview}</span>;
       },
-    },
+    }] : []),
     {
       title: "操作",
       key: "action",
-      width: 100,
+      width: isMobile ? 60 : 100,
       render: (_: any, record: JobExecution) => (
         <Button
           type="link"
           icon={<FileTextOutlined />}
           onClick={() => handleViewDetail(record)}
+          size={isMobile ? 'small' : 'middle'}
+          style={{ padding: isMobile ? 0 : undefined }}
         >
-          详情
+          {!isMobile && "详情"}
         </Button>
       ),
     },
@@ -368,16 +386,17 @@ export default function HistoryPage() {
 
   return (
     <div>
-      <div style={{ marginBottom: 24 }}>
-        <Title level={3}>执行记录</Title>
+      <div style={{ marginBottom: isMobile ? 16 : 24 }}>
+        <Title level={3} style={{ fontSize: isMobile ? '18px' : '24px' }}>执行记录</Title>
       </div>
 
       <Card>
         {/* 筛选区域 */}
-        <Space style={{ marginBottom: 16, flexWrap: "wrap" }}>
-          <span>工具：</span>
+        <Space style={{ marginBottom: 16, flexWrap: "wrap", width: '100%' }} size={isMobile ? 'small' : 'middle'}>
+          <span style={{ fontSize: isMobile ? '13px' : '14px' }}>工具：</span>
           <Select
-            style={{ width: 200 }}
+            style={{ width: isMobile ? 120 : 200 }}
+            size={isMobile ? 'middle' : 'middle'}
             placeholder="全部工具"
             allowClear
             value={filters.job_id}
@@ -390,9 +409,10 @@ export default function HistoryPage() {
             ))}
           </Select>
 
-          <span>状态：</span>
+          <span style={{ fontSize: isMobile ? '13px' : '14px' }}>状态：</span>
           <Select
-            style={{ width: 120 }}
+            style={{ width: isMobile ? 90 : 120 }}
+            size={isMobile ? 'middle' : 'middle'}
             placeholder="全部状态"
             allowClear
             value={filters.status}
@@ -402,23 +422,28 @@ export default function HistoryPage() {
             <Option value="failure">失败</Option>
           </Select>
 
-          <span>执行方式：</span>
-          <Select
-            style={{ width: 120 }}
-            placeholder="全部方式"
-            allowClear
-            value={filters.execution_type}
-            onChange={(value) => handleFilterChange("execution_type", value)}
-          >
-            <Option value="manual">手动</Option>
-            <Option value="scheduled">定时工具</Option>
-          </Select>
+          {!isMobile && (
+            <>
+              <span>执行方式：</span>
+              <Select
+                style={{ width: 120 }}
+                placeholder="全部方式"
+                allowClear
+                value={filters.execution_type}
+                onChange={(value) => handleFilterChange("execution_type", value)}
+              >
+                <Option value="manual">手动</Option>
+                <Option value="scheduled">定时工具</Option>
+              </Select>
+            </>
+          )}
 
           <Button
             icon={<ReloadOutlined />}
             onClick={loadExecutions}
+            size={isMobile ? 'middle' : 'middle'}
           >
-            刷新
+            {!isMobile && "刷新"}
           </Button>
         </Space>
 
@@ -428,11 +453,15 @@ export default function HistoryPage() {
           dataSource={executions}
           rowKey="id"
           loading={loading}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={{ x: isMobile ? 500 : undefined }}
           pagination={{
             ...pagination,
             total,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条记录`,
+            showSizeChanger: !isMobile,
+            showTotal: (total) => isMobile ? `共${total}条` : `共 ${total} 条记录`,
+            size: isMobile ? 'small' : 'default',
+            simple: isMobile,
             onChange: (page, pageSize) => {
               setPagination({ current: page, pageSize });
             },
@@ -459,8 +488,8 @@ export default function HistoryPage() {
             关闭
           </Button>,
         ]}
-        width={1000}
-        style={{ maxWidth: "90vw" }}
+        width={isMobile ? '100%' : 1000}
+        style={{ maxWidth: isMobile ? "100vw" : "90vw", top: isMobile ? 0 : undefined }}
         styles={{
           body: { maxWidth: "100%", overflow: "hidden" },
         }}
@@ -483,8 +512,9 @@ export default function HistoryPage() {
             `}</style>
             <Descriptions 
               bordered 
-              column={2}
-              styles={{ label: { width: "120px", minWidth: "120px" } }}
+              column={isMobile ? 1 : 2}
+              size={isMobile ? 'small' : 'middle'}
+              styles={{ label: { width: isMobile ? "80px" : "120px", minWidth: isMobile ? "80px" : "120px" } }}
             >
               <Descriptions.Item label="执行时间">
                 {formatDateTime(selectedExecution.executed_at)}
@@ -503,42 +533,44 @@ export default function HistoryPage() {
                   {selectedExecution.status === "success" ? "成功" : "失败"}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="执行方式" span={2}>
+              <Descriptions.Item label="执行方式" span={isMobile ? 1 : 2}>
                 <Tag color={selectedExecution.execution_type === "manual" ? "blue" : "purple"}>
                   {selectedExecution.execution_type === "manual" ? "手动" : "定时任务"}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="错误信息" span={2}>
+              <Descriptions.Item label="错误信息" span={isMobile ? 1 : 2}>
                 {selectedExecution.error_message || "无"}
               </Descriptions.Item>
-              <Descriptions.Item label="入参" span={2}>
+              <Descriptions.Item label="入参" span={isMobile ? 1 : 2}>
                 <pre style={{ 
                   background: "#f5f5f5", 
-                  padding: "12px", 
+                  padding: isMobile ? "8px" : "12px", 
                   borderRadius: "4px",
-                  maxHeight: "200px",
+                  maxHeight: isMobile ? "150px" : "200px",
                   overflow: "auto",
                   margin: 0,
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
+                  fontSize: isMobile ? "11px" : "13px",
                 }}>
                   {JSON.stringify(selectedExecution.args || {}, null, 2)}
                 </pre>
               </Descriptions.Item>
-              <Descriptions.Item label="输出文本" span={2}>
+              <Descriptions.Item label="输出文本" span={isMobile ? 1 : 2}>
                 <div style={{ 
                   background: "#f5f5f5", 
-                  padding: "12px", 
+                  padding: isMobile ? "8px" : "12px", 
                   borderRadius: "4px",
-                  maxHeight: "300px",
+                  maxHeight: isMobile ? "200px" : "300px",
                   overflow: "auto",
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
+                  fontSize: isMobile ? "11px" : "13px",
                 }}>
                   {selectedExecution.output_text || "无输出"}
                 </div>
               </Descriptions.Item>
-              <Descriptions.Item label="数据详情（TOP10）" span={2}>
+              <Descriptions.Item label="数据详情（TOP10）" span={isMobile ? 1 : 2}>
                 {renderDatasetTable(selectedExecution.output_dataset)}
               </Descriptions.Item>
             </Descriptions>

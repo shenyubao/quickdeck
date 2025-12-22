@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import os
 import json
+import re
 from typing import Dict, Any, Tuple
 from jinja2 import Template
 from app.executors import StepExecutor
@@ -9,6 +10,51 @@ from app.executors import StepExecutor
 
 class CurlExecutor(StepExecutor):
     """CURL 执行器"""
+    
+    @staticmethod
+    def _fix_data_raw_json(curl_command: str) -> str:
+        """
+        修复 CURL 命令中 --data-raw 参数里的 JSON 引号问题
+        确保 JSON 使用双引号而不是单引号
+        
+        Args:
+            curl_command: 原始 CURL 命令
+            
+        Returns:
+            修复后的 CURL 命令
+        """
+        # 匹配 --data-raw 参数，支持单引号或双引号包裹，支持多行
+        pattern = r"--data-raw\s+['\"](.*?)['\"]"
+        
+        def replace_json(match):
+            json_str = match.group(1)
+            quote_char = match.group(0)[match.group(0).index("'") if "'" in match.group(0) else match.group(0).index('"')]
+            
+            # 先尝试直接解析（可能已经是正确的 JSON）
+            try:
+                json.loads(json_str)
+                return match.group(0)  # 已经是有效的 JSON，不需要修改
+            except json.JSONDecodeError:
+                pass
+            
+            # 尝试修复单引号 JSON
+            try:
+                # 将单引号键名转换为双引号：'key': -> "key":
+                fixed_json = re.sub(r"'([^']+)'(\s*:)", r'"\1"\2', json_str)
+                # 将字符串值从单引号转换为双引号：: 'value' -> : "value"
+                fixed_json = re.sub(r":\s*'([^']*)'", r': "\1"', fixed_json)
+                
+                # 验证修复后的 JSON 是否有效
+                json.loads(fixed_json)
+                # 返回修复后的完整参数
+                return f"--data-raw {quote_char}{fixed_json}{quote_char}"
+            except (json.JSONDecodeError, ValueError, Exception):
+                # 如果修复失败，返回原值
+                return match.group(0)
+        
+        # 替换所有匹配的 --data-raw 参数（使用 DOTALL 以支持多行）
+        fixed_command = re.sub(pattern, replace_json, curl_command, flags=re.DOTALL)
+        return fixed_command
     
     @staticmethod
     def _format_json_if_valid(text: str) -> str:
@@ -67,6 +113,9 @@ class CurlExecutor(StepExecutor):
             curl_command = template.render(**args)
         except Exception as e:
             raise ValueError(f"渲染 CURL 命令失败: {str(e)}")
+        
+        # 修复 --data-raw 参数中的 JSON 引号问题
+        curl_command = self._fix_data_raw_json(curl_command)
         
         # 将渲染后的 CURL 命令输出到执行日志（logs 字段）
         current_logs = result.get("logs", "")

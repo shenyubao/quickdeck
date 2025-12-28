@@ -747,9 +747,9 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
                         message: "路径格式不正确，不能以 / 开头或结尾",
                       },
                     ]}
-                    extra="例如: 数据接入/炼丹炉 (使用 / 分隔层级)"
+                    extra="例如: 数据接入/行情高手 (使用 / 分隔层级)"
                   >
-                    <Input placeholder="例如: 数据接入/炼丹炉" />
+                    <Input placeholder="例如: 数据接入/行情高手" />
                   </Form.Item>
 
                   <Form.Item

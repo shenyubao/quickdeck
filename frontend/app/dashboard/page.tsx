@@ -1151,7 +1151,7 @@ export default function Dashboard() {
               label="工具路径"
               rules={[{ required: true, message: "请输入工具路径" }]}
             >
-              <Input placeholder="例如: 数据接入/炼丹炉" />
+              <Input placeholder="例如: 数据接入/行情高手" />
             </Form.Item>
             <Form.Item name="description" label="描述">
               <Input.TextArea
@@ -1231,7 +1231,7 @@ export default function Dashboard() {
             label="工具路径"
             rules={[{ required: true, message: "请输入工具路径" }]}
           >
-            <Input placeholder="例如: 数据接入/炼丹炉" />
+            <Input placeholder="例如: 数据接入/行情高手" />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea

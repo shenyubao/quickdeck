@@ -1,4 +1,4 @@
-.PHONY: help install dev build up down clean migrate migrate-create migrate-upgrade migrate-downgrade wait-for-db docker-build docker-push docker-build-push dev-base dev-backend dev-frontend
+.PHONY: help install dev build up down update clean migrate migrate-create migrate-upgrade migrate-downgrade wait-for-db docker-build docker-push docker-build-push dev-base dev-backend dev-frontend
 
 help:
 	@echo "QuickDeck Monorepo 管理命令"
@@ -14,6 +14,7 @@ help:
 	@echo "    make dev-frontend    - 直接启动前端服务（需要先运行 make dev-base）"
 	@echo "    make up              - 启动所有服务"
 	@echo "    make down            - 停止所有服务"
+	@echo "    make update          - 拉取最新镜像并重新启动服务到最新版本"
 	@echo "    make clean           - 清理所有构建产物和依赖"
 	@echo "  数据库迁移:"
 	@echo "    make migrate-create  - 创建新的迁移文件（需要提供 MESSAGE=描述）"
@@ -89,6 +90,13 @@ up:
 down:
 	docker-compose down
 	@docker-compose -f docker-compose.dev-base.yml down 2>/dev/null || true
+
+update:
+	@echo "拉取最新镜像..."
+	docker-compose pull
+	@echo "重新启动服务到最新版本..."
+	docker-compose up -d --force-recreate
+	@echo "服务已更新到最新版本！"
 
 clean:
 	docker-compose down -v

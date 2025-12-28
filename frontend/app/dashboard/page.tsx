@@ -35,6 +35,7 @@ import {
 } from "@ant-design/icons";
 import { jobApi, projectApi, credentialApi, uploadApi, type Job, type Project, type JobDetail, type OptionResponse, type Credential } from "@/lib/api";
 import JsonSchemaForm, { type JsonSchemaFormRef } from "./jobs/components/JsonSchemaForm";
+import OptionFieldsForm from "./jobs/components/OptionFieldsForm";
 
 const { Content, Sider } = Layout;
 const { Title, Text} = Typography;
@@ -864,86 +865,13 @@ export default function Dashboard() {
                     layout="vertical"
                     style={{ maxWidth: isMobile ? '100%' : 600 }}
                   >
-                    {jobDetail.workflow.options
-                      .filter(opt => opt.option_type !== "json_schema")
-                      .map((option) => {
-                        const { option_type, credential_type } = option;
-                        const placeholder = `请输入${option.display_name || option.name}`;
-                        
-                        let inputComponent;
-                        switch (option_type) {
-                          case "date":
-                            inputComponent = <DatePicker style={{ width: "100%" }} />;
-                            break;
-                          case "number":
-                            inputComponent = <InputNumber style={{ width: "100%" }} />;
-                            break;
-                          case "file":
-                            inputComponent = (
-                              <Upload
-                                customRequest={handleUpload}
-                                maxCount={1}
-                                onChange={(info) => {
-                                  if (info.file.status === 'done') {
-                                    message.success(`${info.file.name} 文件上传成功`);
-                                  } else if (info.file.status === 'error') {
-                                    message.error(`${info.file.name} 文件上传失败`);
-                                  }
-                                }}
-                              >
-                                <Button>选择文件</Button>
-                              </Upload>
-                            );
-                            break;
-                          case "credential":
-                            const credentials = credentialsMap[credential_type || ""] || [];
-                            inputComponent = (
-                              <Select
-                                placeholder={`请选择${getCredentialTypeName(credential_type)}`}
-                                style={{ width: "100%" }}
-                                showSearch
-                                optionFilterProp="label"
-                              >
-                                {credentials.map((cred) => (
-                                  <Option key={cred.id} value={cred.id} label={cred.name}>
-                                    {cred.name} {cred.description ? `(${cred.description})` : ""}
-                                  </Option>
-                                ))}
-                              </Select>
-                            );
-                            break;
-                          case "text":
-                          default:
-                            inputComponent = <Input placeholder={placeholder} />;
-                            break;
-                        }
-                        
-                        return (
-                          <Form.Item
-                            key={option.id}
-                            name={option.name}
-                            label={
-                              <div>
-                                <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
-                                  {option.display_name || option.name}
-                                </Text>
-                                {option.required && (
-                                  <Text type="danger" style={{ marginLeft: 4 }}>*</Text>
-                                )}
-                              </div>
-                            }
-                            tooltip={option.description}
-                            rules={[
-                              {
-                                required: option.required,
-                                message: `请输入${option.display_name || option.name}`,
-                              },
-                            ]}
-                          >
-                            {inputComponent}
-                          </Form.Item>
-                        );
-                      })}
+                    <OptionFieldsForm
+                      options={jobDetail.workflow.options}
+                      form={runForm}
+                      credentialsMap={credentialsMap}
+                      getCredentialTypeName={getCredentialTypeName}
+                      isMobile={isMobile}
+                    />
                   </Form>
                 </>
               ) : (

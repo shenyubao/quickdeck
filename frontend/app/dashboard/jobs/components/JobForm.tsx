@@ -2288,43 +2288,8 @@ LIMIT {{ limit }}
                     );
                     break;
                   case "file":
-                    inputComponent = (
-                      <Upload
-                        customRequest={async ({ file, onSuccess, onError }) => {
-                          try {
-                            // 调用上传接口
-                            const result = await uploadApi.upload(file as File);
-                            // 将文件路径保存到表单值中
-                            form.setFieldValue(option.name, result.path);
-                            // 调用 onSuccess，传递结果对象
-                            if (onSuccess) {
-                              onSuccess(result, new XMLHttpRequest());
-                            }
-                          } catch (error) {
-                            console.error("文件上传失败:", error);
-                            message.error(`文件上传失败: ${error instanceof Error ? error.message : "未知错误"}`);
-                            if (onError) {
-                              onError(error as Error);
-                            }
-                          }
-                        }}
-                        maxCount={1}
-                        onRemove={() => {
-                          // 移除文件时，清空表单值
-                          form.setFieldValue(option.name, undefined);
-                        }}
-                        // 显示已上传的文件名
-                        fileList={form.getFieldValue(option.name) ? [
-                          {
-                            uid: "-1",
-                            name: form.getFieldValue(option.name)?.split("/").pop() || "已上传文件",
-                            status: "done",
-                          }
-                        ] : []}
-                      >
-                        <Button>选择文件</Button>
-                      </Upload>
-                    );
+                    // 文件类型在 return 语句中单独处理，这里不需要设置 inputComponent
+                    inputComponent = null;
                     break;
                   case "credential":
                     // 凭证类型参数，需要根据凭证类型过滤
@@ -2350,6 +2315,67 @@ LIMIT {{ limit }}
                         placeholder={`请输入${label}`}
                       />
                     );
+                }
+                
+                // 对于文件类型，需要在 Form.Item 内部使用 shouldUpdate 来响应表单值变化
+                if (option.type === "file") {
+                  return (
+                    <Form.Item
+                      key={option.name}
+                      name={option.name}
+                      label={
+                        <span>
+                          {label}
+                          {isRequired && <span style={{ color: "red", marginLeft: "4px" }}>*</span>}
+                        </span>
+                      }
+                      rules={isRequired ? [{ required: true, message: `请输入${label}` }] : []}
+                      extra={option.description ? option.description : undefined}
+                    >
+                      <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues[option.name] !== currentValues[option.name]}>
+                        {() => {
+                          const filePath = form.getFieldValue(option.name);
+                          return (
+                            <Upload
+                              customRequest={async ({ file, onSuccess, onError }) => {
+                                try {
+                                  // 调用上传接口
+                                  const result = await uploadApi.upload(file as File);
+                                  // 将文件路径保存到表单值中
+                                  form.setFieldValue(option.name, result.path);
+                                  // 调用 onSuccess，传递结果对象
+                                  if (onSuccess) {
+                                    onSuccess(result, new XMLHttpRequest());
+                                  }
+                                } catch (error) {
+                                  console.error("文件上传失败:", error);
+                                  message.error(`文件上传失败: ${error instanceof Error ? error.message : "未知错误"}`);
+                                  if (onError) {
+                                    onError(error as Error);
+                                  }
+                                }
+                              }}
+                              maxCount={1}
+                              onRemove={() => {
+                                // 移除文件时，清空表单值
+                                form.setFieldValue(option.name, undefined);
+                              }}
+                              // 显示已上传的文件名，根据表单值动态更新
+                              fileList={filePath ? [
+                                {
+                                  uid: "-1",
+                                  name: filePath.split("/").pop() || "已上传文件",
+                                  status: "done",
+                                }
+                              ] : []}
+                            >
+                              <Button>选择文件</Button>
+                            </Upload>
+                          );
+                        }}
+                      </Form.Item>
+                    </Form.Item>
+                  );
                 }
                 
                 return (

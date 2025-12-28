@@ -33,7 +33,7 @@ export interface JsonSchemaFormRef {
  * JSON Schema 表单组件
  * 根据 JSON Schema 动态渲染表单控件
  */
-const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
+const JsonSchemaFormInner = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   schema,
   value = {},
   onChange,
@@ -42,6 +42,29 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   const [form] = Form.useForm();
   const isInternalChangeRef = React.useRef(false);
   const lastExternalValueRef = React.useRef<any>(null);
+  const renderCountRef = React.useRef(0);
+  const componentIdRef = React.useRef(`JsonSchemaForm-${Math.random().toString(36).substr(2, 9)}`);
+
+  // 组件渲染计数（仅用于调试）
+  renderCountRef.current++;
+  
+  // 日志：记录每次渲染
+  console.log(`[${componentIdRef.current}] 渲染次数: ${renderCountRef.current}`, {
+    schemaType: schema?.type,
+    schemaPropertiesKeys: schema?.properties ? Object.keys(schema.properties) : [],
+    valueKeys: value ? Object.keys(value) : [],
+    valueStr: JSON.stringify(value),
+    disabled,
+    hasOnChange: !!onChange,
+  });
+  
+  // 监听组件挂载和卸载
+  React.useEffect(() => {
+    console.log(`[${componentIdRef.current}] ✅ 组件已挂载`);
+    return () => {
+      console.log(`[${componentIdRef.current}] ❌ 组件已卸载`);
+    };
+  }, []);
 
   // 暴露验证方法给父组件
   useImperativeHandle(ref, () => ({
@@ -60,7 +83,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   }));
 
   // 递归处理日期字段，将字符串转换为 dayjs 对象
-  const parseDateFields = (value: any, fieldSchema: any): any => {
+  const parseDateFields = (value: any, fieldSchema: any, path: string = 'root'): any => {
     if (!value || !fieldSchema) return value;
 
     // 处理对象类型
@@ -68,7 +91,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
       const result = { ...value };
       Object.keys(fieldSchema.properties).forEach((key) => {
         if (result[key] !== undefined && result[key] !== null) {
-          result[key] = parseDateFields(result[key], fieldSchema.properties[key]);
+          result[key] = parseDateFields(result[key], fieldSchema.properties[key], `${path}.${key}`);
         }
       });
       return result;
@@ -77,7 +100,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     // 处理数组类型
     if (fieldSchema.type === "array" && fieldSchema.items) {
       if (Array.isArray(value)) {
-        return value.map((item) => parseDateFields(item, fieldSchema.items));
+        return value.map((item, index) => parseDateFields(item, fieldSchema.items, `${path}[${index}]`));
       }
       return value;
     }
@@ -95,8 +118,15 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
 
   // 初始化表单值
   React.useEffect(() => {
+    console.log(`[${componentIdRef.current}] useEffect[初始化表单值] 触发`, {
+      isInternalChange: isInternalChangeRef.current,
+      valueStr: JSON.stringify(value),
+      lastExternalValue: lastExternalValueRef.current,
+    });
+    
     // 如果是内部变化导致的更新，忽略
     if (isInternalChangeRef.current) {
+      console.log(`[${componentIdRef.current}] ⏭️  跳过：内部变化`);
       isInternalChangeRef.current = false;
       return;
     }
@@ -104,33 +134,30 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     // 检查值是否真的变化了（深度比较）
     const valueStr = JSON.stringify(value);
     if (valueStr === lastExternalValueRef.current) {
+      console.log(`[${componentIdRef.current}] ⏭️  跳过：值未变化`);
       return;
     }
+    
+    console.log(`[${componentIdRef.current}] 🔄 更新表单值`, {
+      oldValue: lastExternalValueRef.current,
+      newValue: valueStr,
+    });
+    
     lastExternalValueRef.current = valueStr;
 
-    if (value && typeof value === "object") {
-      // 处理日期字段，转换为 dayjs 对象
-      const processedValue = { ...value };
-      if (schema?.properties) {
-        Object.keys(schema.properties).forEach((key) => {
-          if (processedValue[key] !== undefined && processedValue[key] !== null) {
-            processedValue[key] = parseDateFields(
-              processedValue[key],
-              schema.properties[key]
-            );
-          }
-        });
-      }
+    if (value && typeof value === "object" && Object.keys(value).length > 0) {
+      // 只处理日期字段转换，不进行额外的循环处理
+      const processedValue = parseDateFields(value, schema);
       // 使用 setFieldsValue 而不是直接设置，确保不会触发 onChange
       form.setFieldsValue(processedValue);
-    } else if (!value || Object.keys(value).length === 0) {
+    } else {
       // 如果 value 为空，重置表单
       form.resetFields();
     }
-  }, [value, schema]);
+  }, [value, schema, form]);
 
   // 递归处理日期字段，将 dayjs 对象转换为字符串
-  const processDateFields = (value: any, fieldSchema: any): any => {
+  const processDateFields = (value: any, fieldSchema: any, path: string = 'root'): any => {
     if (!value || !fieldSchema) return value;
 
     // 处理对象类型
@@ -138,7 +165,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
       const result = { ...value };
       Object.keys(fieldSchema.properties).forEach((key) => {
         if (result[key] !== undefined && result[key] !== null) {
-          result[key] = processDateFields(result[key], fieldSchema.properties[key]);
+          result[key] = processDateFields(result[key], fieldSchema.properties[key], `${path}.${key}`);
         }
       });
       return result;
@@ -147,7 +174,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     // 处理数组类型
     if (fieldSchema.type === "array" && fieldSchema.items) {
       if (Array.isArray(value)) {
-        return value.map((item) => processDateFields(item, fieldSchema.items));
+        return value.map((item, index) => processDateFields(item, fieldSchema.items, `${path}[${index}]`));
       }
       return value;
     }
@@ -166,25 +193,26 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
 
   // 表单值变化处理
   const handleValuesChange = (changedValues: any, allValues: any) => {
+    console.log(`[${componentIdRef.current}] 📝 表单值变化`, {
+      changedValues,
+      allValues,
+      hasOnChange: !!onChange,
+    });
+    
     if (onChange) {
       // 标记为内部变化
       isInternalChangeRef.current = true;
       
-      // 处理日期字段，转换为字符串
-      const processedValues = { ...allValues };
-      if (schema?.properties) {
-        Object.keys(schema.properties).forEach((key) => {
-          if (processedValues[key] !== undefined && processedValues[key] !== null) {
-            processedValues[key] = processDateFields(
-              processedValues[key],
-              schema.properties[key]
-            );
-          }
-        });
-      }
+      // 只处理日期字段转换，不进行额外的循环处理
+      const processedValues = processDateFields(allValues, schema);
       
       // 更新最后的外部值引用
-      lastExternalValueRef.current = JSON.stringify(processedValues);
+      const processedStr = JSON.stringify(processedValues);
+      console.log(`[${componentIdRef.current}] 🚀 调用 onChange`, {
+        processedValues,
+        processedStr,
+      });
+      lastExternalValueRef.current = processedStr;
       
       onChange(processedValues);
     }
@@ -218,7 +246,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
       actualSchema = resolveRef(fieldSchema.$ref, schema);
       if (!actualSchema) {
         return (
-          <Form.Item key={fullPath} label={label}>
+          <Form.Item key={`${fullPath}-ref-error`} label={label}>
             <Text type="danger">无法解析引用: {fieldSchema.$ref}</Text>
           </Form.Item>
         );
@@ -240,7 +268,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
         return renderObjectField(fullPath, actualSchema, label, isRequired);
       default:
         return (
-          <Form.Item key={fullPath} label={label}>
+          <Form.Item key={`${fullPath}-unsupported`} label={label}>
             <Input placeholder={`不支持的类型: ${actualSchema.type}`} disabled />
           </Form.Item>
         );
@@ -269,7 +297,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     if (fieldSchema.format === "date") {
       return (
         <Form.Item
-          key={path}
+          key={`${path}-string-date`}
           name={path.split(".")}
           label={label}
           rules={rules}
@@ -287,7 +315,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     // 普通字符串
     return (
       <Form.Item
-        key={path}
+        key={`${path}-string`}
         name={path.split(".")}
         label={label}
         rules={rules}
@@ -314,7 +342,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
 
     return (
       <Form.Item
-        key={path}
+        key={`${path}-${fieldSchema.type}`}
         name={path.split(".")}
         label={label}
         rules={rules}
@@ -340,7 +368,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   ) => {
     return (
       <Form.Item
-        key={path}
+        key={`${path}-boolean`}
         name={path.split(".")}
         label={label}
         valuePropName="checked"
@@ -360,7 +388,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
     const itemSchema = fieldSchema.items;
     if (!itemSchema) {
       return (
-        <Form.Item key={path} label={label}>
+        <Form.Item key={`${path}-array-error-no-items`} label={label}>
           <Text type="danger">数组项缺少 items 定义</Text>
         </Form.Item>
       );
@@ -372,7 +400,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
       actualItemSchema = resolveRef(itemSchema.$ref, schema);
       if (!actualItemSchema) {
         return (
-          <Form.Item key={path} label={label}>
+          <Form.Item key={`${path}-array-error-ref`} label={label}>
             <Text type="danger">无法解析引用: {itemSchema.$ref}</Text>
           </Form.Item>
         );
@@ -398,7 +426,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
 
     return (
       <Form.Item
-        key={path}
+        key={`${path}-array`}
         label={label}
         required={isRequired}
       >
@@ -472,7 +500,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
                       
                       return (
                         <Form.Item
-                          key={key}
+                          key={`${field.key}-${key}`}
                           name={[field.name, key]}
                           label={fieldLabel}
                           rules={rules}
@@ -558,7 +586,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   ) => {
     if (!fieldSchema.properties) {
       return (
-        <Form.Item key={path} label={label}>
+        <Form.Item key={`${path}-object-error`} label={label}>
           <Text type="danger">对象缺少 properties 定义</Text>
         </Form.Item>
       );
@@ -566,7 +594,7 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
 
     return (
       <Card
-        key={path}
+        key={`${path}-object`}
         title={label}
         size="small"
         style={{ marginBottom: 16 }}
@@ -608,7 +636,29 @@ const JsonSchemaForm = forwardRef<JsonSchemaFormRef, JsonSchemaFormProps>(({
   );
 });
 
-JsonSchemaForm.displayName = "JsonSchemaForm";
+JsonSchemaFormInner.displayName = "JsonSchemaFormInner";
+
+// 使用 React.memo 包裹组件，避免不必要的重新渲染
+const JsonSchemaForm = React.memo(JsonSchemaFormInner, (prevProps, nextProps) => {
+  // 自定义比较函数：只有真正变化时才重新渲染
+  const schemaEqual = JSON.stringify(prevProps.schema) === JSON.stringify(nextProps.schema);
+  const valueEqual = JSON.stringify(prevProps.value) === JSON.stringify(nextProps.value);
+  const disabledEqual = prevProps.disabled === nextProps.disabled;
+  const onChangeEqual = prevProps.onChange === nextProps.onChange;
+  
+  const shouldSkipRender = schemaEqual && valueEqual && disabledEqual && onChangeEqual;
+  
+  console.log('[JsonSchemaForm] React.memo 比较结果', {
+    shouldSkipRender,
+    schemaEqual,
+    valueEqual,
+    disabledEqual,
+    onChangeEqual,
+  });
+  
+  return shouldSkipRender;
+});
 
 export default JsonSchemaForm;
+
 

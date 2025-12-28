@@ -31,6 +31,7 @@ openpyxl = "^3.1.5"
 xlrd = "1.2.0"
 jinja2 = "^3.1.0"
 pymysql = "^1.1.0"
+alibabacloud-dingtalk = "^2.2.37"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.0"

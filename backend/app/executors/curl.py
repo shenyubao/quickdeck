@@ -15,7 +15,7 @@ class CurlExecutor(StepExecutor):
     def _fix_data_raw_json(curl_command: str) -> str:
         """
         修复 CURL 命令中 --data-raw 参数里的 JSON 引号问题
-        确保 JSON 使用双引号而不是单引号
+        确保 JSON 使用双引号而不是单引号，并且外层使用单引号包裹时内部使用双引号
         
         Args:
             curl_command: 原始 CURL 命令
@@ -24,11 +24,12 @@ class CurlExecutor(StepExecutor):
             修复后的 CURL 命令
         """
         # 匹配 --data-raw 参数，支持单引号或双引号包裹，支持多行
-        pattern = r"--data-raw\s+['\"](.*?)['\"]"
+        # 使用更精确的模式来匹配完整的 JSON 对象
+        pattern = r"--data-raw\s+(['\"])(.*?)\1(?=\s|$|\\)"
         
         def replace_json(match):
-            json_str = match.group(1)
-            quote_char = match.group(0)[match.group(0).index("'") if "'" in match.group(0) else match.group(0).index('"')]
+            outer_quote = match.group(1)  # 外层引号（' 或 "）
+            json_str = match.group(2)
             
             # 先尝试直接解析（可能已经是正确的 JSON）
             try:
@@ -39,18 +40,51 @@ class CurlExecutor(StepExecutor):
             
             # 尝试修复单引号 JSON
             try:
-                # 将单引号键名转换为双引号：'key': -> "key":
-                fixed_json = re.sub(r"'([^']+)'(\s*:)", r'"\1"\2', json_str)
-                # 将字符串值从单引号转换为双引号：: 'value' -> : "value"
-                fixed_json = re.sub(r":\s*'([^']*)'", r': "\1"', fixed_json)
+                # 如果外层是单引号，我们需要将内部的单引号 JSON 转换为双引号 JSON
+                # 同时处理 Python 布尔值 True/False -> true/false
+                fixed_json = json_str
+                
+                # 替换 Python 布尔值为 JSON 布尔值
+                fixed_json = re.sub(r'\bTrue\b', 'true', fixed_json)
+                fixed_json = re.sub(r'\bFalse\b', 'false', fixed_json)
+                fixed_json = re.sub(r'\bNone\b', 'null', fixed_json)
+                
+                # 如果是单引号包裹的类 Python 字典，转换为标准 JSON
+                if outer_quote == "'":
+                    # 将所有单引号键名和值转换为双引号
+                    # 使用更精确的正则来避免误匹配
+                    # 1. 匹配键名: 'key': -> "key":
+                    fixed_json = re.sub(r"'([^']+)'(\s*):", r'"\1"\2:', fixed_json)
+                    # 2. 匹配字符串值: : 'value' -> : "value"
+                    # 但要注意数组和对象结束符号后的逗号
+                    fixed_json = re.sub(r":\s*'([^']*)'", r': "\1"', fixed_json)
                 
                 # 验证修复后的 JSON 是否有效
                 json.loads(fixed_json)
+                
+                # 如果外层是单引号，内部已经转换为双引号，保持外层单引号
+                # 如果外层是双引号，需要转义内部的双引号
+                if outer_quote == '"':
+                    # 转义内部的双引号
+                    fixed_json = fixed_json.replace('"', '\\"')
+                
                 # 返回修复后的完整参数
-                return f"--data-raw {quote_char}{fixed_json}{quote_char}"
-            except (json.JSONDecodeError, ValueError, Exception):
-                # 如果修复失败，返回原值
-                return match.group(0)
+                return f"--data-raw {outer_quote}{fixed_json}{outer_quote}"
+            except (json.JSONDecodeError, ValueError, Exception) as e:
+                # 如果修复失败，尝试使用 Python 的 ast.literal_eval 解析后再转换为 JSON
+                try:
+                    import ast
+                    # 尝试作为 Python 字典解析
+                    python_obj = ast.literal_eval(json_str)
+                    # 转换为标准 JSON 字符串（使用双引号）
+                    json_output = json.dumps(python_obj, ensure_ascii=False)
+                    # 根据外层引号决定是否需要转义
+                    if outer_quote == '"':
+                        json_output = json_output.replace('"', '\\"')
+                    return f"--data-raw {outer_quote}{json_output}{outer_quote}"
+                except:
+                    # 如果还是失败，返回原值
+                    return match.group(0)
         
         # 替换所有匹配的 --data-raw 参数（使用 DOTALL 以支持多行）
         fixed_command = re.sub(pattern, replace_json, curl_command, flags=re.DOTALL)

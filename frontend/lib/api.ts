@@ -1,7 +1,7 @@
 import { getSession, signOut } from "next-auth/react";
 
-// 获取 API URL
-// 从 NEXT_PUBLIC_URL 自动拼接 /api 路径
+// 获取 API URL（基础 URL，不包含 /api 路径）
+// 所有 API 调用会统一添加 /api 前缀
 const getApiUrl = () => {
   const publicUrl = process.env.NEXT_PUBLIC_URL;
   
@@ -11,17 +11,17 @@ const getApiUrl = () => {
   }
   
   if (typeof window !== "undefined") {
-    // 客户端（浏览器）：NEXT_PUBLIC_URL + /api
-    return `${publicUrl}/api`;
+    // 客户端（浏览器）：直接使用 NEXT_PUBLIC_URL
+    return publicUrl;
   }
   
   // 服务端：如果 NEXT_PUBLIC_URL 包含 localhost，在服务端替换为 backend（Docker 内部网络）
   if (publicUrl.includes("localhost")) {
-    return "http://backend:8000/api";
+    return "http://backend:8000";
   }
   
-  // 其他情况使用 NEXT_PUBLIC_URL + /api
-  return `${publicUrl}/api`;
+  // 其他情况直接使用 publicUrl
+  return publicUrl;
 };
 
 // 使用函数而不是直接赋值，确保在运行时获取正确的 URL

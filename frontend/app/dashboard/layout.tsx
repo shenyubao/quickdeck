@@ -52,21 +52,27 @@ export default function DashboardLayout({
   const { data: session } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
-  // 从 localStorage 初始化当前项目（如果有的话）
-  const [currentProject, setCurrentProject] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("currentProject");
-    }
-    return externalCurrentProject || null;
-  });
+  // 当前项目 - 使用固定初始值避免 hydration 错误
+  const [currentProject, setCurrentProject] = useState<string | null>(externalCurrentProject || null);
   
-  // 从 localStorage 初始化站点名称（避免闪烁）
-  const [siteName, setSiteName] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("siteName") || "QuickDeck";
+  // 在客户端 mounted 后从 localStorage 读取当前项目
+  useEffect(() => {
+    const cachedProject = localStorage.getItem("currentProject");
+    if (cachedProject) {
+      setCurrentProject(cachedProject);
     }
-    return "QuickDeck";
-  });
+  }, []);
+  
+  // 站点名称 - 使用固定初始值避免 hydration 错误
+  const [siteName, setSiteName] = useState<string>("QuickDeck");
+  
+  // 在客户端 mounted 后从 localStorage 读取站点名称
+  useEffect(() => {
+    const cachedSiteName = localStorage.getItem("siteName");
+    if (cachedSiteName) {
+      setSiteName(cachedSiteName);
+    }
+  }, []);
   
   // 使用 ref 防止重复请求
   const isLoadingRef = useRef(false);
@@ -135,12 +141,16 @@ export default function DashboardLayout({
     }
   }, []); // 移除 session 依赖
 
+  // 使用 session 的 user.id 作为依赖，而不是整个 session 对象
+  // 这样可以避免 session 对象引用变化导致的重复触发
+  const userId = session?.user?.id;
+  
   useEffect(() => {
     // 只有在用户已登录时才加载项目列表
-    if (session) {
+    if (userId) {
       loadProjects();
     }
-  }, [session, loadProjects]); // 保持依赖，但 loadProjects 不再频繁变化
+  }, [userId, loadProjects]); // 只依赖 userId，避免 session 对象引用变化
 
   // 加载站点名称配置
   const loadSiteName = useCallback(async () => {
@@ -170,10 +180,10 @@ export default function DashboardLayout({
   }, []);
 
   useEffect(() => {
-    if (session) {
+    if (userId) {
       loadSiteName();
     }
-  }, [session, loadSiteName]); // loadSiteName 现在是稳定的
+  }, [userId, loadSiteName]); // 只依赖 userId，避免 session 对象引用变化
 
   // 监听项目列表更新事件
   useEffect(() => {
@@ -231,32 +241,26 @@ export default function DashboardLayout({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // 提取 isAdmin 状态，避免每次都从 session 读取
+  const isAdmin = (session as any)?.isAdmin || false;
+  
   useEffect(() => {
     // 只有在用户已登录时才执行重定向逻辑
-    if (!session) {
+    if (!userId) {
       return;
     }
     
     const key = getSelectedKey();
-    const isAdmin = (session as any)?.isAdmin || false;
     
-    // 如果没有项目，且选中的是工具相关的菜单，自动切换到项目管理
-    if (projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
-      // 检查用户是否有权限访问项目管理页面
-      if (isAdmin) {
-        setSelectedMenu("project-management");
-        // 如果不在项目管理页面，则跳转过去
-        if (!pathname?.includes("/projects")) {
-          router.push("/dashboard/projects");
-        }
-      } else {
-        // 非管理员用户没有项目时，显示空状态即可，不跳转
-        setSelectedMenu(key);
-      }
+    // 只对普通用户：如果没有项目，且选中的是工具相关的菜单，显示空状态
+    // 管理员无需重定向，可以直接访问所有页面
+    if (!isAdmin && projects.length === 0 && (key === "tasks" || key === "history" || key === "credentials")) {
+      // 非管理员用户没有项目时，显示空状态即可，不跳转
+      setSelectedMenu(key);
     } else {
       setSelectedMenu(key);
     }
-  }, [pathname, projects.length, session, router]);
+  }, [pathname, projects.length, userId, isAdmin, router]); // 使用 userId 和 isAdmin 替代 session
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/" });
@@ -297,14 +301,13 @@ export default function DashboardLayout({
     },
   ];
 
-  // 获取用户是否为管理员
+  // 获取用户信息
   const user = session?.user as any;
-  const isAdmin = (session as any)?.isAdmin || false;
 
   // 侧边栏菜单项 - 根据是否有项目和管理员权限动态显示
   const sideMenuItems: MenuProps["items"] = [
-    // 只有当有项目时才显示工具相关的菜单
-    ...(projects.length > 0
+    // 管理员始终显示工具菜单，普通用户只有当有项目时才显示
+    ...(isAdmin || projects.length > 0
       ? [
           {
             key: "tasks",

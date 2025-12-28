@@ -37,7 +37,7 @@ import { jobApi, projectApi, credentialApi, uploadApi, type Job, type Project, t
 import JsonSchemaForm, { type JsonSchemaFormRef } from "./jobs/components/JsonSchemaForm";
 
 const { Content, Sider } = Layout;
-const { Title, Text } = Typography;
+const { Title, Text} = Typography;
 const { Option } = Select;
 
 interface TreeNode extends TreeDataNode {
@@ -66,10 +66,17 @@ export default function Dashboard() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [credentialsMap, setCredentialsMap] = useState<Record<string, Credential[]>>({});
-  // 存储 JSON Schema 表单的值
-  const [jsonSchemaValues, setJsonSchemaValues] = useState<Record<string, any>>({});
-  // 存储 JSON Schema 表单的 ref
+  // ⚠️ 移除 jsonSchemaValues 状态 - 让 JsonSchemaForm 自己管理状态
+  // 只在运行时通过 ref 获取值
   const jsonSchemaFormRefs = React.useRef<Record<string, JsonSchemaFormRef | null>>({});
+
+  // 创建稳定的 ref 回调
+  const handleJsonSchemaRef = React.useCallback((name: string, ref: JsonSchemaFormRef | null) => {
+    if (ref) {
+      jsonSchemaFormRefs.current[name] = ref;
+    }
+  }, []);
+  
   
   // 移动端相关状态
   const [isMobile, setIsMobile] = useState(false);
@@ -303,7 +310,7 @@ export default function Dashboard() {
     if (node.job) {
       // 点击工具节点
       setSelectedJob(node.job);
-      setJsonSchemaValues({}); // 清空 JSON Schema 值
+      // ⚠️ 已移除 setJsonSchemaValues({}) - 不再需要
       
       // 移动端切换到详情页
       if (isMobile) {
@@ -379,7 +386,7 @@ export default function Dashboard() {
       setSelectedJob(null);
       setJobDetail(null);
       runForm.resetFields();
-      setJsonSchemaValues({});
+      // ⚠️ 已移除 setJsonSchemaValues({}) - 不再需要
     }
   };
 
@@ -556,15 +563,17 @@ export default function Dashboard() {
       // 验证普通表单
       const values = await runForm.validateFields();
       
-      // 验证所有 JSON Schema 表单
+      // 验证并获取所有 JSON Schema 表单的值
       const jsonSchemaValidations = Object.keys(jsonSchemaFormRefs.current).map(async (key) => {
         const ref = jsonSchemaFormRefs.current[key];
         if (ref) {
-          await ref.validate();
+          const jsonValues = await ref.validate();
+          return { key, values: jsonValues };
         }
+        return { key, values: {} };
       });
       
-      await Promise.all(jsonSchemaValidations);
+      const jsonSchemaResults = await Promise.all(jsonSchemaValidations);
       
       // 处理参数格式
       const args: Record<string, any> = {};
@@ -585,9 +594,9 @@ export default function Dashboard() {
       });
 
       // 合并 JSON Schema 表单的值
-      Object.keys(jsonSchemaValues).forEach((key) => {
-        if (jsonSchemaValues[key] !== undefined && jsonSchemaValues[key] !== null) {
-          args[key] = jsonSchemaValues[key];
+      jsonSchemaResults.forEach(({ key, values: jsonValues }) => {
+        if (jsonValues !== undefined && jsonValues !== null) {
+          args[key] = jsonValues;
         }
       });
 
@@ -648,90 +657,8 @@ export default function Dashboard() {
     }
   };
 
-  // 根据参数类型渲染输入组件
-  const renderOptionInput = (option: OptionResponse) => {
-    const { option_type, credential_type, json_schema } = option;
-    
-    // 如果是 json_schema 类型，使用 JsonSchemaForm 组件
-    if (option_type === "json_schema") {
-      let parsedSchema = null;
-      try {
-        parsedSchema = typeof json_schema === "string"
-          ? JSON.parse(json_schema)
-          : json_schema;
-      } catch (e) {
-        console.error("JSON Schema 解析失败:", e);
-      }
-      
-      if (!parsedSchema) {
-        return <div style={{ color: "red" }}>JSON Schema 无效</div>;
-      }
-      
-      return (
-        <JsonSchemaForm
-          ref={(ref) => {
-            if (ref) {
-              jsonSchemaFormRefs.current[option.name] = ref;
-            }
-          }}
-          schema={parsedSchema}
-          value={jsonSchemaValues[option.name]}
-          onChange={(value) => {
-            setJsonSchemaValues((prev) => ({
-              ...prev,
-              [option.name]: value,
-            }));
-          }}
-        />
-      );
-    }
-    
-    switch (option_type) {
-      case "date":
-        return <DatePicker style={{ width: "100%" }} />;
-      case "number":
-        return <InputNumber style={{ width: "100%" }} />;
-      case "file":
-        return (
-          <Upload
-            customRequest={handleUpload}
-            maxCount={1}
-            onChange={(info) => {
-              if (info.file.status === 'done') {
-                message.success(`${info.file.name} 文件上传成功`);
-              } else if (info.file.status === 'error') {
-                message.error(`${info.file.name} 文件上传失败`);
-              }
-            }}
-          >
-            <Button>选择文件</Button>
-          </Upload>
-        );
-      case "credential":
-        // 凭证类型参数，需要根据凭证类型过滤
-        const credentials = credentialsMap[credential_type || ""] || [];
-        return (
-          <Select
-            placeholder={`请选择${getCredentialTypeName(credential_type)}`}
-            style={{ width: "100%" }}
-            showSearch
-            optionFilterProp="label"
-          >
-            {credentials.map((cred) => (
-              <Option key={cred.id} value={cred.id} label={cred.name}>
-                {cred.name} {cred.description ? `(${cred.description})` : ""}
-              </Option>
-            ))}
-          </Select>
-        );
-      case "text":
-      default:
-        return <Input placeholder={`请输入${option.display_name || option.name}`} />;
-    }
-  };
-
   // 获取凭证类型显示名称
-  const getCredentialTypeName = (type?: string) => {
+  const getCredentialTypeName = React.useCallback((type?: string) => {
     switch (type) {
       case "mysql":
         return "MySQL凭证";
@@ -742,7 +669,7 @@ export default function Dashboard() {
       default:
         return "凭证";
     }
-  };
+  }, []);
 
 
   if (!currentProject) {
@@ -894,69 +821,136 @@ export default function Dashboard() {
                   <Title level={5} style={{ marginBottom: isMobile ? 12 : 16, fontSize: isMobile ? '15px' : '16px' }}>
                     运行参数
                   </Title>
+                  
+                  {/* JSON Schema 类型的字段 */}
+                  {jobDetail.workflow.options
+                    .filter(opt => opt.option_type === "json_schema")
+                    .map((option) => {
+                      const jsonSchema = typeof option.json_schema === "string" 
+                        ? JSON.parse(option.json_schema) 
+                        : option.json_schema;
+                      
+                      return (
+                        <div key={option.id} style={{ marginBottom: isMobile ? "20px" : "24px" }}>
+                          <div style={{ marginBottom: "8px" }}>
+                            <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
+                              {option.display_name || option.name}
+                            </Text>
+                            {option.required && (
+                              <Text type="danger" style={{ marginLeft: 4 }}>*</Text>
+                            )}
+                          </div>
+                          {option.description && (
+                            <div style={{ marginBottom: "8px", color: "#666", fontSize: isMobile ? "11px" : "12px" }}>
+                              {option.description}
+                            </div>
+                          )}
+                          {jsonSchema ? (
+                            <JsonSchemaForm
+                              key={`json-schema-${option.id}`}
+                              ref={(ref) => handleJsonSchemaRef(option.name, ref)}
+                              schema={jsonSchema}
+                            />
+                          ) : (
+                            <div style={{ color: "red" }}>JSON Schema 无效</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  
+                  {/* 其他类型的字段 */}
+                  <Form
+                    form={runForm}
+                    layout="vertical"
+                    style={{ maxWidth: isMobile ? '100%' : 600 }}
+                  >
+                    {jobDetail.workflow.options
+                      .filter(opt => opt.option_type !== "json_schema")
+                      .map((option) => {
+                        const { option_type, credential_type } = option;
+                        const placeholder = `请输入${option.display_name || option.name}`;
+                        
+                        let inputComponent;
+                        switch (option_type) {
+                          case "date":
+                            inputComponent = <DatePicker style={{ width: "100%" }} />;
+                            break;
+                          case "number":
+                            inputComponent = <InputNumber style={{ width: "100%" }} />;
+                            break;
+                          case "file":
+                            inputComponent = (
+                              <Upload
+                                customRequest={handleUpload}
+                                maxCount={1}
+                                onChange={(info) => {
+                                  if (info.file.status === 'done') {
+                                    message.success(`${info.file.name} 文件上传成功`);
+                                  } else if (info.file.status === 'error') {
+                                    message.error(`${info.file.name} 文件上传失败`);
+                                  }
+                                }}
+                              >
+                                <Button>选择文件</Button>
+                              </Upload>
+                            );
+                            break;
+                          case "credential":
+                            const credentials = credentialsMap[credential_type || ""] || [];
+                            inputComponent = (
+                              <Select
+                                placeholder={`请选择${getCredentialTypeName(credential_type)}`}
+                                style={{ width: "100%" }}
+                                showSearch
+                                optionFilterProp="label"
+                              >
+                                {credentials.map((cred) => (
+                                  <Option key={cred.id} value={cred.id} label={cred.name}>
+                                    {cred.name} {cred.description ? `(${cred.description})` : ""}
+                                  </Option>
+                                ))}
+                              </Select>
+                            );
+                            break;
+                          case "text":
+                          default:
+                            inputComponent = <Input placeholder={placeholder} />;
+                            break;
+                        }
+                        
+                        return (
+                          <Form.Item
+                            key={option.id}
+                            name={option.name}
+                            label={
+                              <div>
+                                <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
+                                  {option.display_name || option.name}
+                                </Text>
+                                {option.required && (
+                                  <Text type="danger" style={{ marginLeft: 4 }}>*</Text>
+                                )}
+                              </div>
+                            }
+                            tooltip={option.description}
+                            rules={[
+                              {
+                                required: option.required,
+                                message: `请输入${option.display_name || option.name}`,
+                              },
+                            ]}
+                          >
+                            {inputComponent}
+                          </Form.Item>
+                        );
+                      })}
+                  </Form>
                 </>
               ) : (
-                <Text type="secondary" style={{ fontSize: isMobile ? "13px" : "14px" }}>该工具没有配置参数</Text>
+                <Text type="secondary" style={{ fontSize: isMobile ? "13px" : "14px" }}>
+                  该工具没有配置参数
+                </Text>
               )}
-              <Form
-                form={runForm}
-                layout="vertical"
-                style={{ maxWidth: isMobile ? '100%' : 600 }}
-              >
-                {jobDetail?.workflow?.options && jobDetail.workflow.options.length > 0 && jobDetail.workflow.options.map((option) => {
-                  // 如果是 json_schema 类型，直接渲染，不使用 Form.Item
-                  if (option.option_type === "json_schema") {
-                    return (
-                      <div key={option.id} style={{ marginBottom: isMobile ? "20px" : "24px" }}>
-                        <div style={{ marginBottom: "8px" }}>
-                          <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
-                            {option.display_name || option.name}
-                          </Text>
-                          {option.required && (
-                            <Text type="danger" style={{ marginLeft: 4 }}>
-                              *
-                            </Text>
-                          )}
-                        </div>
-                        {option.description && (
-                          <div style={{ marginBottom: "8px", color: "#666", fontSize: isMobile ? "11px" : "12px" }}>
-                            {option.description}
-                          </div>
-                        )}
-                        {renderOptionInput(option)}
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                    <Form.Item
-                      key={option.id}
-                      name={option.name}
-                      label={
-                        <div>
-                          <Text strong style={{ fontSize: isMobile ? "13px" : "14px" }}>
-                            {option.display_name || option.name}
-                          </Text>
-                          {option.required && (
-                            <Text type="danger" style={{ marginLeft: 4 }}>
-                              *
-                            </Text>
-                          )}
-                        </div>
-                      }
-                      tooltip={option.description}
-                      rules={[
-                        {
-                          required: option.required,
-                          message: `请输入${option.display_name || option.name}`,
-                        },
-                      ]}
-                    >
-                      {renderOptionInput(option)}
-                    </Form.Item>
-                  );
-                })}
-              </Form>
               <div style={{ marginTop: isMobile ? 12 : 16, textAlign: isMobile ? "center" : "right" }}>
                 <Button
                   type="primary"

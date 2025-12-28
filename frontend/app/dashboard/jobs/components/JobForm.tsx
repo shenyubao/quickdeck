@@ -53,7 +53,94 @@ interface JobFormProps {
   onCancel?: () => void;
 }
 
+// JsonSchemaForm 包装组件，用于优化性能
+interface JsonSchemaFormWrapperProps {
+  optionName: string;
+  jsonSchemaString: string | object;
+  value: any;
+  onChange: (optionName: string, value: any) => void;
+  formRef: (name: string, ref: JsonSchemaFormRef | null) => void;
+}
+
+const JsonSchemaFormWrapper = React.memo<JsonSchemaFormWrapperProps>(
+  ({ optionName, jsonSchemaString, value, onChange, formRef }) => {
+    console.log('[JsonSchemaFormWrapper] 渲染', {
+      optionName,
+      hasValue: !!value,
+      valueKeys: value ? Object.keys(value) : []
+    });
+
+    React.useEffect(() => {
+      console.log('[JsonSchemaFormWrapper] 挂载', optionName);
+      return () => {
+        console.log('[JsonSchemaFormWrapper] 卸载', optionName);
+      };
+    }, [optionName]);
+
+    // 使用 useMemo 缓存解析后的 jsonSchema
+    const jsonSchema = React.useMemo(() => {
+      console.log('[JsonSchemaFormWrapper] 解析 jsonSchema', optionName);
+      try {
+        return typeof jsonSchemaString === "string"
+          ? JSON.parse(jsonSchemaString)
+          : jsonSchemaString;
+      } catch (e) {
+        console.error("JSON Schema 解析失败:", e);
+        return null;
+      }
+    }, [jsonSchemaString, optionName]);
+
+    // 使用 useCallback 缓存 onChange 函数
+    const handleChange = React.useCallback(
+      (newValue: any) => {
+        console.log('[JsonSchemaFormWrapper] handleChange 调用', optionName, newValue);
+        onChange(optionName, newValue);
+      },
+      [optionName, onChange]
+    );
+
+    if (!jsonSchema) {
+      return <div style={{ color: "red" }}>JSON Schema 无效</div>;
+    }
+
+    return (
+      <JsonSchemaForm
+        ref={(ref) => formRef(optionName, ref)}
+        schema={jsonSchema}
+        value={value || {}}
+        onChange={handleChange}
+      />
+    );
+  },
+  // 自定义比较函数，只在关键 props 变化时重新渲染
+  (prevProps, nextProps) => {
+    const shouldSkipRender = (
+      prevProps.optionName === nextProps.optionName &&
+      prevProps.jsonSchemaString === nextProps.jsonSchemaString &&
+      JSON.stringify(prevProps.value) === JSON.stringify(nextProps.value) &&
+      prevProps.onChange === nextProps.onChange &&
+      prevProps.formRef === nextProps.formRef
+    );
+    
+    console.log('[JsonSchemaFormWrapper] memo 比较', {
+      optionName: nextProps.optionName,
+      shouldSkipRender,
+      optionNameChanged: prevProps.optionName !== nextProps.optionName,
+      schemaChanged: prevProps.jsonSchemaString !== nextProps.jsonSchemaString,
+      valueChanged: JSON.stringify(prevProps.value) !== JSON.stringify(nextProps.value),
+      onChangeChanged: prevProps.onChange !== nextProps.onChange,
+      formRefChanged: prevProps.formRef !== nextProps.formRef
+    });
+    
+    return shouldSkipRender;
+  }
+);
+
+JsonSchemaFormWrapper.displayName = "JsonSchemaFormWrapper";
+
 export default function JobForm({ jobId, currentProject, onCancel }: JobFormProps) {
+  console.log('[JobForm] 组件渲染', { jobId, hasProject: !!currentProject });
+  
   const router = useRouter();
   const isEditMode = !!jobId;
   
@@ -74,6 +161,32 @@ export default function JobForm({ jobId, currentProject, onCancel }: JobFormProp
   const [jsonSchemaValues, setJsonSchemaValues] = useState<Record<string, any>>({});
   // 存储 JSON Schema 表单的 ref
   const jsonSchemaFormRefs = React.useRef<Record<string, JsonSchemaFormRef | null>>({});
+
+  // 创建稳定的 onChange 回调，避免每次渲染都创建新函数
+  const handleJsonSchemaChange = React.useCallback((optionName: string, value: any) => {
+    console.log('[JobForm] handleJsonSchemaChange 调用', {
+      optionName,
+      value
+    });
+    setJsonSchemaValues((prev) => {
+      console.log('[JobForm] setJsonSchemaValues', {
+        prev,
+        optionName,
+        newValue: value
+      });
+      return {
+        ...prev,
+        [optionName]: value,
+      };
+    });
+  }, []);
+
+  // 创建稳定的 ref 回调，避免每次渲染都创建新函数
+  const handleJsonSchemaRef = React.useCallback((name: string, ref: JsonSchemaFormRef | null) => {
+    if (ref) {
+      jsonSchemaFormRefs.current[name] = ref;
+    }
+  }, []);
 
   // 如果是编辑模式，加载工具详情
   useEffect(() => {
@@ -2101,8 +2214,15 @@ LIMIT {{ limit }}
                 const isRequired = option.required;
                 const optionType = option.option_type || "text";
                 
+                console.log('[JobForm] 渲染测试选项', {
+                  name: option.name,
+                  optionType,
+                  isJsonSchema: optionType === "json_schema"
+                });
+                
                 // 如果是 json_schema 类型，使用 JsonSchemaForm 组件
                 if (optionType === "json_schema") {
+                  console.log('[JobForm] 进入 json_schema 分支', option.name);
                   let jsonSchema = null;
                   try {
                     jsonSchema = typeof option.json_schema === "string"
@@ -2135,20 +2255,12 @@ LIMIT {{ limit }}
                           {option.description}
                         </div>
                       )}
-                      <JsonSchemaForm
-                        ref={(ref) => {
-                          if (ref) {
-                            jsonSchemaFormRefs.current[option.name] = ref;
-                          }
-                        }}
-                        schema={jsonSchema}
+                      <JsonSchemaFormWrapper
+                        optionName={option.name}
+                        jsonSchemaString={option.json_schema}
                         value={jsonSchemaValues[option.name]}
-                        onChange={(value) => {
-                          setJsonSchemaValues((prev) => ({
-                            ...prev,
-                            [option.name]: value,
-                          }));
-                        }}
+                        onChange={handleJsonSchemaChange}
+                        formRef={handleJsonSchemaRef}
                       />
                     </div>
                   );

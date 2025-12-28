@@ -549,6 +549,41 @@ main() {
             fi
             cd frontend && npm run dev
             ;;
+        prod-frontend)
+            log_info "启动前端服务（生产模式）..."
+            if [ ! -d "frontend/node_modules" ]; then
+                log_info "检测到依赖未安装，正在安装依赖..."
+                cd frontend && npm install
+                cd ..
+            fi
+            
+            # 检查是否需要重新构建
+            local force_rebuild=false
+            if [[ "$1" == "--rebuild" ]] || [[ "$1" == "-r" ]]; then
+                force_rebuild=true
+            fi
+            
+            # 检查构建产物是否完整（检查关键文件）
+            local build_incomplete=false
+            if [ ! -d "frontend/.next" ] || [ ! -f "frontend/.next/BUILD_ID" ] || [ ! -f "frontend/.next/prerender-manifest.json" ]; then
+                build_incomplete=true
+            fi
+            
+            if [ "$build_incomplete" = true ] || [ "$force_rebuild" = true ]; then
+                if [ "$force_rebuild" = true ]; then
+                    log_info "强制重新构建生产版本..."
+                elif [ "$build_incomplete" = true ]; then
+                    log_warning "检测到构建不完整或未构建，正在构建生产版本..."
+                fi
+                cd frontend && npm run build
+                cd ..
+            else
+                log_info "使用现有构建（如需重新构建请使用 --rebuild 参数）"
+            fi
+            
+            log_success "启动生产环境前端服务（端口 3000）..."
+            cd frontend && npm run start
+            ;;
         up)
             check_dependencies
             log_info "启动所有服务..."
@@ -633,7 +668,8 @@ main() {
             echo "    dev                  - 启动开发环境（Docker Compose，所有服务在容器中）"
             echo "    dev-base              - 启动基础服务（db 和 nginx 容器）"
             echo "    dev-backend           - 直接启动后端服务（需要先运行 dev-base）"
-            echo "    dev-frontend          - 直接启动前端服务（需要先运行 dev-base）"
+            echo "    dev-frontend          - 直接启动前端服务（开发模式，需要先运行 dev-base）"
+            echo "    prod-frontend [--rebuild|-r] - 直接启动前端服务（生产模式，可选 --rebuild 强制重新构建）"
             echo "    up                    - 启动所有服务"
             echo "    down                  - 停止所有服务"
             echo "    clean                 - 清理所有构建产物和依赖"
@@ -654,7 +690,11 @@ main() {
             echo "    docker-build REGISTRY=xxx TAG=xxx - 构建 Docker 镜像"
             echo "    docker-push REGISTRY=xxx TAG=xxx  - 推送 Docker 镜像"
             echo "    docker-build-push REGISTRY=xxx TAG=xxx - 构建并推送镜像"
-            echo "    示例: $0 docker-build-push REGISTRY=docker.io/yourusername TAG=v1.0.0"
+            echo ""
+            echo "使用示例:"
+            echo "  启动生产环境前端: $0 prod-frontend"
+            echo "  强制重新构建并启动: $0 prod-frontend --rebuild"
+            echo "  构建并推送镜像: $0 docker-build-push REGISTRY=docker.io/yourusername TAG=v1.0.0"
             exit 1
             ;;
     esac

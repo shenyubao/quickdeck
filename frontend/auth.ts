@@ -28,8 +28,9 @@ const getServerApiUrl = () => {
     return "http://localhost:8000";
   }
   
-  // 其他情况直接使用 publicUrl + /api（不加后端端口，因为通过 nginx）
-  return `${publicUrl}/api`;
+  // 其他情况直接使用 publicUrl（不加后端端口，因为通过 nginx）
+  // 注意：这里不包含 /api，因为调用时会统一添加 /api 前缀
+  return publicUrl;
 };
 
 const API_URL = getServerApiUrl();
@@ -140,14 +141,30 @@ export const authConfig = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        // 保存完整的用户信息到 token
+        token.sub = user.id; // NextAuth 默认使用 sub 存储 user id
+        token.id = user.id;
         token.accessToken = (user as any).accessToken;
         token.username = (user as any).username;
+        token.email = user.email;
+        token.name = user.name;
         token.isAdmin = (user as any).isAdmin;
       }
       return token;
     },
     async session({ session, token }) {
       if (token) {
+        // 确保 session.user 包含完整的用户信息
+        // NextAuth 默认从 token.sub 获取 user.id
+        const userId = (token.id || token.sub) as string;
+        
+        if (!session.user) {
+          session.user = {} as any;
+        }
+        
+        session.user.id = userId;
+        session.user.email = (token.email || session.user.email) as string;
+        session.user.name = (token.name || session.user.name) as string;
         (session as any).accessToken = token.accessToken;
         (session as any).username = token.username as string;
         (session as any).isAdmin = token.isAdmin as boolean;

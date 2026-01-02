@@ -634,6 +634,7 @@ def execute(args: dict) -> tuple:
                     # 4. 上传到 OSS
                     # 获取当前日期（格式：YYYYMMDD）
                     current_date = datetime.now().strftime('%Y%m%d')
+                    # 在 DST_PREFIX 后面添加日期目录
                     oss_key = dst_prefix + current_date + '/' + csv_rel_path
                     print(f"  上传到 OSS: {oss_key}")
                     
